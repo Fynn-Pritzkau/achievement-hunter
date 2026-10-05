@@ -36,7 +36,7 @@
   });
 </script>
 
-<div class="toolbar">
+<div class="toolbar" data-tour="toolbar">
   <div>
     <h2>{t(`list.${list.id}` as MessageKey)}</h2>
     <span class="muted small">{t('library.count', { n: games.length })} · {t(`list.${list.id}.hint` as MessageKey)}</span>
@@ -53,9 +53,9 @@
   </p>
 {:else}
   <ul>
-    {#each games as g (g.appid)}
+    {#each games as g, i (g.appid)}
       {@const pct = completion(g)}
-      <li>
+      <li data-tour={i === 0 ? 'row' : undefined}>
         <button class="row" onclick={() => onOpen(g.appid)}>
           <img src={capsuleUrls(g.appid, g.iconHash)[0]} alt="" loading="lazy" onerror={(e) => nextImage(e, capsuleUrls(g.appid, g.iconHash))} />
           <div class="main">

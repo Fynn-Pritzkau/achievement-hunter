@@ -76,6 +76,7 @@
       <button class="primary" onclick={save}>{t('settings.save')}</button>
     </div>
     <p class="small muted">{t('settings.restartHint')}</p>
+    <button class="ghost tour" onclick={() => { app.startTour(); onClose(); }}>? {t('settings.tour')}</button>
     <div class="row version">
       <span class="small muted">
         {t('settings.version', { v: app.version })}
@@ -108,4 +109,5 @@
   p { margin: 0; }
   .version { align-items: center; border-top: 1px solid var(--border); padding-top: 12px; }
   .error { color: var(--warn); }
+  .tour { justify-self: start; color: var(--accent); padding-left: 0; }
 </style>

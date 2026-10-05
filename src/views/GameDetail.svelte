@@ -131,7 +131,7 @@
     </div>
     {#if game.total}<div class="bar" class:perfect={isPerfect(game)}><i style="width:{pct}%"></i></div>{/if}
   </div>
-  <div class="actions">
+  <div class="actions" data-tour="game-actions">
     <select
       value={game.status ?? ''}
       onchange={(e) => app.updateGame({ ...game, status: (e.currentTarget.value || null) as Status | null, statusManual: true })}
@@ -150,7 +150,7 @@
 </header>
 
 {#if list.length}
-  <div class="filters">
+  <div class="filters" data-tour="game-filters">
     <div class="tabs">
       <button class:active={view === 'open'} onclick={() => (view = 'open')}>{t('game.open', { n: list.filter((a) => !a.achieved).length })}</button>
       {#if pinnedCount}<button class:active={view === 'pinned'} onclick={() => (view = 'pinned')}>{t('game.focus', { n: pinnedCount })}</button>{/if}
@@ -172,10 +172,10 @@
   </div>
 
   <ul>
-    {#each shown as a (a.apiname)}
+    {#each shown as a, i (a.apiname)}
       {@const spoiler = a.hidden && !a.achieved && !app.settings.revealHidden && !revealed.has(a.apiname)}
       {@const pr = a.achieved ? undefined : progress.get(a.apiname)}
-      <li class:done={a.achieved} class:excluded={a.excluded}>
+      <li data-tour={i === 0 ? 'achievement' : undefined} class:done={a.achieved} class:excluded={a.excluded}>
         <div class="ach">
           {#if a.icon}<img src={a.achieved ? a.icon : a.icongray || a.icon} alt="" loading="lazy" />{:else}<span class="noicon">🏆</span>{/if}
           <button class="ghost text" onclick={() => (expanded = expanded === a.apiname ? null : a.apiname)}>

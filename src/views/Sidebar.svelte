@@ -56,17 +56,17 @@
 </script>
 
 <aside>
-  <button class="search" onclick={onSearch}><span>{t('sidebar.search')}</span><kbd>Ctrl K</kbd></button>
+  <button class="search" data-tour="search" onclick={onSearch}><span>{t('sidebar.search')}</span><kbd>Ctrl K</kbd></button>
 
   {#each running as g (g.appid)}
-    <button class="live" onclick={() => select('running')}>
+    <button class="live" data-tour="live" onclick={() => select('running')}>
       <span class="dot"></span>
       <span class="name">{g.name}</span>
       <span class="small">{g.unlocked}/{g.total ?? '?'}</span>
     </button>
   {/each}
 
-  <nav>
+  <nav data-tour="lists">
     {#each sections as s (s.id)}
       <!-- The active list stays visible even in a collapsed section. -->
       {@const open = !collapsed[s.id] || s.lists.includes(listId)}
@@ -87,11 +87,11 @@
     {/each}
   </nav>
 
-  <button class="ghost item" class:active={listId === 'history'} onclick={() => select('history')}>
+  <button class="ghost item" data-tour="history" class:active={listId === 'history'} onclick={() => select('history')}>
     <span>{t('sidebar.history')}</span>
   </button>
 
-  <button class="profile" class:active={listId === 'appAchievements'} onclick={() => select('appAchievements')} title={t('sidebar.openMilestones')}>
+  <button class="profile" data-tour="milestones" class:active={listId === 'appAchievements'} onclick={() => select('appAchievements')} title={t('sidebar.openMilestones')}>
     <div class="stats">
       <div><b>{stats.perfect}</b><span class="muted small">{t('sidebar.perfect')}</span></div>
       <div><b>{Math.round(stats.avgCompletion)} %</b><span class="muted small">{t('sidebar.avgCompletion')}</span></div>
@@ -107,7 +107,7 @@
     </div>
   </button>
 
-  <footer>
+  <footer data-tour="sync">
     {#if app.update}
       <button class="update" onclick={() => app.installUpdate()} disabled={app.updateState === 'installing'} title={app.update.notes || undefined}>
         {#if app.updateState === 'installing'}
@@ -125,7 +125,8 @@
       <div class="row">
         <span class="small muted">{t('sidebar.lastSync', { when: lastSyncLabel(app.lastSync) })}</span>
         <button class="ghost small" onclick={() => app.sync()} title={t('sidebar.syncNow')}>↻</button>
-        <button class="ghost small" onclick={onSettings} title={t('settings.title')}>⚙</button>
+        <button class="ghost small" data-tour="tour" onclick={() => app.startTour()} title={t('sidebar.tour')}>?</button>
+        <button class="ghost small" data-tour="settings" onclick={onSettings} title={t('settings.title')}>⚙</button>
       </div>
     {/if}
     {#if app.error}<div class="small error">{app.error}</div>{/if}

@@ -74,6 +74,10 @@ class AppState {
   updateError = $state<string | null>(null);
   /** Why the overlay hotkey could not be bound (invalid or taken by another app). */
   overlayError = $state<string | null>(null);
+  /** The guided tour is running (see tour.ts). */
+  touring = $state(false);
+  /** The one-time "take the tour?" card is shown. */
+  tourOffer = $state(false);
 
   repo!: Repo;
   /** Only while the overlay window exists does the main window send it updates. */
@@ -121,6 +125,7 @@ class AppState {
     await this.loadAppAchievements();
     const key = await loadApiKey();
     this.configured = !!key && !!(await this.repo.getMeta('steamid64'));
+    this.tourOffer = !(await this.repo.getMeta('tourOffered'));
     this.ready = true;
     this.version = await appVersion();
     // Quietly look for updates a bit after start, then twice a day (the app mostly lives in the tray).
@@ -166,6 +171,18 @@ class AppState {
     await this.saveSettings({ ...this.settings, steamId: steamIdInput, language });
     this.configured = true;
     await this.start(apiKey);
+  }
+
+  startTour() {
+    this.dismissTourOffer();
+    this.touring = true;
+  }
+
+  /** The tour is offered once; afterwards it starts only from the sidebar or the settings. */
+  dismissTourOffer() {
+    if (!this.tourOffer) return;
+    this.tourOffer = false;
+    void this.repo.setMeta('tourOffered', String(Date.now()));
   }
 
   async saveSettings(s: Settings) {
