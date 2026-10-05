@@ -58,5 +58,3 @@ Publish a new version with one command. GitHub Actions then builds, signs and re
 ```bash
 npm run release -- patch "What's new"
 ```
-
-Architecture, invariants and release setup are documented in [CLAUDE.md](CLAUDE.md) (German).
