@@ -4,6 +4,7 @@
   import { coverUrl, fmtDate, fmtDateTime, fmtHours, fmtPercent } from '../lib/util';
   import { isMessageKey, t } from '../lib/i18n.svelte';
   import { autoTags } from '../lib/tags';
+  import type { StatProgress } from '../lib/steam/local';
 
   let { game, onBack }: { game: Game; onBack: () => void } = $props();
 
@@ -18,7 +19,7 @@
   };
 
   type View = 'open' | 'pinned' | 'done' | 'all';
-  type Order = 'easy' | 'rare' | 'name' | 'recent';
+  type Order = 'easy' | 'rare' | 'name' | 'recent' | 'progress';
 
   let list = $state<Achievement[]>([]);
   let view = $state<View>('open');
@@ -27,6 +28,8 @@
   let expanded = $state<string | null>(null);
   let revealed = $state(new Set<string>());
   let refreshing = $state(false);
+  /** Stat progress of open achievements, straight from Steam's cache; never stored. */
+  let progress = $state(new Map<string, StatProgress>());
 
   async function load(appid: number) {
     // Stored tags only change on a schema refresh; add the ones from newer rules right away.
@@ -41,6 +44,20 @@
     game.total;
     void load(game.appid);
   });
+  $effect(() => {
+    // Every local sync replaces the game object, so progress follows the running game.
+    const appid = game.appid;
+    void app.localProgress(appid).then((p) => {
+      if (game.appid === appid) progress = p;
+    });
+  });
+
+  /** Share of the way to an open stat achievement, -1 = not counted by a stat. */
+  const ratio = (a: Achievement) => {
+    const pr = !a.achieved && progress.get(a.apiname);
+    return pr ? pr.current / pr.max : -1;
+  };
+  const fmtNum = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 
   const pinnedCount = $derived(list.filter((a) => a.pinned && !a.achieved).length);
   const tags = $derived([...new Set(list.flatMap((a) => a.tags))].sort());
@@ -55,6 +72,7 @@
       rare: (a, b) => (a.percent ?? 101) - (b.percent ?? 101),
       name: (a, b) => a.name.localeCompare(b.name),
       recent: (a, b) => b.unlocktime - a.unlocktime,
+      progress: (a, b) => ratio(b) - ratio(a) || p(b) - p(a),
     };
     // Pinned first, excluded last.
     return l.sort((a, b) => Number(b.pinned) - Number(a.pinned) || Number(a.excluded) - Number(b.excluded) || cmp[order](a, b));
@@ -149,12 +167,14 @@
       <option value="rare">{t('game.orderRare')}</option>
       <option value="recent">{t('game.orderRecent')}</option>
       <option value="name">{t('game.orderName')}</option>
+      {#if progress.size}<option value="progress">{t('game.orderProgress')}</option>{/if}
     </select>
   </div>
 
   <ul>
     {#each shown as a (a.apiname)}
       {@const spoiler = a.hidden && !a.achieved && !app.settings.revealHidden && !revealed.has(a.apiname)}
+      {@const pr = a.achieved ? undefined : progress.get(a.apiname)}
       <li class:done={a.achieved} class:excluded={a.excluded}>
         <div class="ach">
           {#if a.icon}<img src={a.achieved ? a.icon : a.icongray || a.icon} alt="" loading="lazy" />{:else}<span class="noicon">🏆</span>{/if}
@@ -174,6 +194,12 @@
               >{t('game.spoiler')}</span>
             {:else}
               <div class="small muted">{a.description || '—'}</div>
+            {/if}
+            {#if pr}
+              <div class="prog">
+                <div class="bar"><i style="width:{(pr.current / pr.max) * 100}%"></i></div>
+                <span class="small muted">{fmtNum(pr.current)} / {fmtNum(pr.max)}</span>
+              </div>
             {/if}
           </button>
           <div class="side">
@@ -212,6 +238,10 @@
                   {#if rank}<span class="muted"> · {t('game.rarityRank', { n: rank, total: rarityRank.total })}</span>{/if}
                 {:else}–{/if}
               </dd>
+              {#if pr}
+                <dt>{t('game.progress')}</dt>
+                <dd>{t('game.progressOf', { n: fmtNum(pr.current), max: fmtNum(pr.max), p: fmtPercent((pr.current / pr.max) * 100) })}</dd>
+              {/if}
               <dt>{t('game.unlockedAt')}</dt>
               <dd>{a.achieved ? (fmtDateTime(a.unlocktime) ?? '✓') : t('game.notUnlocked')}</dd>
               {#each a.tags as tg}
@@ -292,6 +322,8 @@
   .text { flex: 1; min-width: 0; text-align: left; padding: 2px 4px; }
   .name { font-weight: 600; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .spoiler { color: var(--muted); font-style: italic; cursor: pointer; }
+  .prog { display: flex; align-items: center; gap: 8px; margin-top: 4px; max-width: 320px; }
+  .prog .bar { flex: 1; }
   .side { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 70px; }
   .pct { font-variant-numeric: tabular-nums; font-weight: 600; }
   .pct.rare { color: var(--gold); }

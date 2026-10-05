@@ -278,7 +278,7 @@ export class SyncEngine {
     // so an old cache file never replaces a newer schema from the API.
     const localSchema: SchemaAchievement[] | null =
       local && local.achievements.length > 0 && local.languageMatch && local.schemaMtime * 1000 > (base.schemaFetchedAt ?? 0)
-        ? local.achievements.map(({ achieved: _a, unlocktime: _u, ...s }) => s)
+        ? local.achievements.map(({ achieved: _a, unlocktime: _u, progress: _p, ...s }) => s)
         : null;
     // The stats file is current unless the game was played since Steam last wrote it (another PC, Steam Deck).
     // Local and live passes are triggered by the file or the running game, so they read it directly.

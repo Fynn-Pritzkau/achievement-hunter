@@ -33,6 +33,18 @@ describe('Steam local cache', () => {
     expect(await repo.getGame(1)).toMatchObject({ unlocked: 1, total: 2 });
   });
 
+  it('never stores stat progress; it is read from disk when shown', async () => {
+    const { steam, local, repo, engine } = setup();
+    steam.add({ appid: 1, name: 'Alpha', playtime: 120, lastPlayed: RECENT, achievements: { a: [false, 0, 80] } });
+    local.set(1, { schemaMtime: RECENT, statsMtime: RECENT + 60, achievements: { a: [false, 0] }, progress: { a: [37, 50] } });
+
+    await engine.sync();
+    expect(steam.count()).toBe(2); // GetOwnedGames + rarity, as without progress
+    const [a] = await repo.getAchievements(1);
+    expect(a.apiname).toBe('a');
+    expect('progress' in a).toBe(false);
+  });
+
   it('a local pass picks up a new unlock without any API call', async () => {
     const { steam, local, engine, advance } = setup();
     steam.add({ appid: 1, name: 'Alpha', playtime: 120, lastPlayed: RECENT, achievements: { a: [false, 0, 80] } });

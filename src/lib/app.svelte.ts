@@ -13,6 +13,7 @@ import {
   type AppUpdate,
 } from './platform';
 import { SteamApi } from './steam/api';
+import type { LocalSteam, StatProgress } from './steam/local';
 import { SyncEngine, type SyncProgress, type UnlockEvent } from './sync/engine';
 import { aggregate } from './sync/merge';
 import { Scheduler } from './sync/scheduler';
@@ -66,6 +67,7 @@ class AppState {
 
   repo!: Repo;
   private engine: SyncEngine | null = null;
+  private local: LocalSteam | null = null;
   private scheduler: Scheduler | null = null;
   private appAchTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -148,11 +150,12 @@ class AppState {
     const steamid = (await this.repo.getMeta('steamid64'))!;
     const transport = await steamTransport();
     const api = new SteamApi({ apiKey, language: this.settings.language, ...transport });
+    this.local = await openLocalSteam(steamid, this.settings.language);
     this.engine = new SyncEngine({
       api,
       repo: this.repo,
       steamid,
-      local: await openLocalSteam(steamid, this.settings.language),
+      local: this.local,
       staleDays: this.settings.staleDays,
       onProgress: (p) => (this.progress = p.done < p.total ? p : null),
       onGameUpdated: (g) => this.upsertLocal(g),
@@ -188,6 +191,12 @@ class AppState {
 
   async syncGame(appid: number) {
     await this.engine?.syncGame(appid);
+  }
+
+  /** Stat progress of a game's open achievements, read fresh from Steam's cache (free; empty without it). */
+  async localProgress(appid: number): Promise<Map<string, StatProgress>> {
+    const g = await this.local?.game(appid);
+    return new Map((g?.achievements ?? []).flatMap((a) => (a.progress ? [[a.apiname, a.progress] as const] : [])));
   }
 
   private descriptionsTried = new Set<number>();

@@ -11,6 +11,7 @@
 
 use serde::Serialize;
 use std::{
+    collections::HashMap,
     fs,
     io::{BufRead, BufReader},
     path::PathBuf,
@@ -23,6 +24,7 @@ enum Kv<'a> {
     Section(Vec<(&'a str, Kv<'a>)>),
     Str(&'a str),
     Int(i64),
+    Float(f32),
     Other,
 }
 
@@ -56,7 +58,8 @@ fn section<'a>(b: &'a [u8], p: &mut usize, root: bool) -> Option<Vec<(&'a str, K
             0x00 => Kv::Section(section(b, p, false)?),
             0x01 => Kv::Str(cstr(b, p)?),
             0x02 => Kv::Int(i32::from_le_bytes(take::<4>(b, p)?) as i64),
-            0x03 | 0x04 | 0x06 => {
+            0x03 => Kv::Float(f32::from_le_bytes(take::<4>(b, p)?)),
+            0x04 | 0x06 => {
                 take::<4>(b, p)?;
                 Kv::Other
             }
@@ -82,6 +85,15 @@ fn sec<'a, 'b>(v: Option<&'b Kv<'a>>) -> &'b [(&'a str, Kv<'a>)] {
 fn int(v: Option<&Kv>) -> Option<i64> {
     match v? {
         Kv::Int(i) => Some(*i),
+        Kv::Str(s) => s.trim().parse().ok(),
+        _ => None,
+    }
+}
+
+fn num(v: Option<&Kv>) -> Option<f64> {
+    match v? {
+        Kv::Int(i) => Some(*i as f64),
+        Kv::Float(f) => Some(*f as f64),
         Kv::Str(s) => s.trim().parse().ok(),
         _ => None,
     }
@@ -167,6 +179,14 @@ pub struct LocalAchievement {
     icongray: String,
     achieved: bool,
     unlocktime: i64,
+    /// How far an open achievement is, for those Steam tracks with a stat ("37 / 50").
+    progress: Option<Progress>,
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+pub struct Progress {
+    current: f64,
+    max: f64,
 }
 
 #[derive(Serialize)]
@@ -188,12 +208,20 @@ pub fn local_achievements(account_id: u32, appid: u32, language: String) -> Opti
     let schema_path = dir.join(format!("UserGameStatsSchema_{appid}.bin"));
     let schema_mtime = mtime_secs(&fs::metadata(&schema_path).ok()?);
     let schema_buf = fs::read(&schema_path).ok()?;
-    let schema_root = section(&schema_buf, &mut 0, true)?;
 
     let stats_path = dir.join(format!("UserGameStats_{account_id}_{appid}.bin"));
     let stats_mtime = fs::metadata(&stats_path).ok().map(|m| mtime_secs(&m));
     let stats_buf = stats_mtime.and_then(|_| fs::read(&stats_path).ok());
-    let stats_root = match &stats_buf {
+
+    let (language_match, achievements) = parse_game(&schema_buf, stats_buf.as_deref(), appid, &language)?;
+    Some(LocalGame { schema_mtime, stats_mtime, language_match, achievements })
+}
+
+/// Parses the schema and (if present) the user's stats file of one game.
+/// Returns whether names were in `language`, and the achievements. None = a file is unreadable.
+fn parse_game(schema_buf: &[u8], stats_buf: Option<&[u8]>, appid: u32, language: &str) -> Option<(bool, Vec<LocalAchievement>)> {
+    let schema_root = section(schema_buf, &mut 0, true)?;
+    let stats_root = match stats_buf {
         Some(b) => Some(section(b, &mut 0, true)?),
         None => None,
     };
@@ -207,9 +235,21 @@ pub fn local_achievements(account_id: u32, appid: u32, language: String) -> Opti
         .collect();
     stat_ids.sort_by_key(|(id, _)| *id);
 
+    // Plain stats (no achievement bits) by name, for progress. Steam leaves out stats still at 0.
+    let values: Option<HashMap<&str, f64>> = stats.map(|s| {
+        stat_ids
+            .iter()
+            .filter(|(_, stat)| sec(get(stat, "bits")).is_empty())
+            .filter_map(|(id, stat)| {
+                let name = text(get(stat, "name"));
+                (!name.is_empty()).then(|| (name, num(get(sec(get(s, &id.to_string())), "data")).unwrap_or(0.0)))
+            })
+            .collect()
+    });
+
     let mut language_match = false;
     let mut achievements = Vec::new();
-    for (stat_id, stat) in stat_ids {
+    for (stat_id, stat) in stat_ids.iter().copied() {
         let bits = sec(get(stat, "bits"));
         if bits.is_empty() {
             continue;
@@ -229,8 +269,8 @@ pub fn local_achievements(account_id: u32, appid: u32, language: String) -> Opti
                 continue;
             }
             let display = sec(get(a, "display"));
-            let (name, matched) = localized(get(display, "name"), &language);
-            let (description, _) = localized(get(display, "desc"), &language);
+            let (name, matched) = localized(get(display, "name"), language);
+            let (description, _) = localized(get(display, "desc"), language);
             language_match |= matched;
             let hidden = int(get(display, "hidden")).or_else(|| int(get(a, "hidden"))).unwrap_or(0) != 0;
             let achieved = data & (1 << bit) != 0;
@@ -247,11 +287,29 @@ pub fn local_achievements(account_id: u32, appid: u32, language: String) -> Opti
                 icongray: field("icon_gray").to_owned(),
                 achieved,
                 unlocktime: if achieved { int(get(times, &bit.to_string())).unwrap_or(0) } else { 0 },
+                progress: if achieved { None } else { values.as_ref().and_then(|v| progress(a, v)) },
             });
         }
     }
 
-    Some(LocalGame { schema_mtime, stats_mtime, language_match, achievements })
+    Some((language_match, achievements))
+}
+
+/// `bits/<bit>/progress`: the stat a "collect 50" achievement counts, shifted by `min_val`.
+/// Only the plain "statvalue" operation is understood; anything else is left out.
+fn progress(bit: &[(&str, Kv)], values: &HashMap<&str, f64>) -> Option<Progress> {
+    let p = sec(get(bit, "progress"));
+    let value = sec(get(p, "value"));
+    if !text(get(value, "operation")).eq_ignore_ascii_case("statvalue") {
+        return None;
+    }
+    let min = num(get(p, "min_val")).unwrap_or(0.0);
+    let max = num(get(p, "max_val"))? - min;
+    if max <= 0.0 {
+        return None;
+    }
+    let stat = values.get(text(get(value, "operand1")))?;
+    Some(Progress { current: (stat - min).clamp(0.0, max), max })
 }
 
 #[derive(Serialize)]
@@ -376,6 +434,91 @@ mod tests {
         s(&mut b, 0x02, "data");
         b.extend_from_slice(&[1, 0]); // cut off mid-value
         assert!(section(&b, &mut 0, true).is_none());
+    }
+
+    fn put_str(b: &mut Vec<u8>, k: &str, v: &str) {
+        s(b, 0x01, k);
+        b.extend_from_slice(v.as_bytes());
+        b.push(0);
+    }
+
+    fn put_int(b: &mut Vec<u8>, k: &str, v: i32) {
+        s(b, 0x02, k);
+        b.extend_from_slice(&v.to_le_bytes());
+    }
+
+    /// An achievement bit counting `stat` from `min` to `max` with the given operation.
+    fn put_bit(b: &mut Vec<u8>, bit: &str, name: &str, op: &str, stat: &str, min: &str, max: &str) {
+        s(b, 0x00, bit);
+        put_str(b, "name", name);
+        s(b, 0x00, "progress");
+        s(b, 0x00, "value");
+        put_str(b, "operation", op);
+        put_str(b, "operand1", stat);
+        b.push(0x08);
+        put_str(b, "min_val", min);
+        put_str(b, "max_val", max);
+        b.extend_from_slice(&[0x08, 0x08]);
+    }
+
+    /// Schema: stats 1 = "kills" (int), 2 = "distance" (float), 3 = "unused",
+    /// 10 = achievement bits counting them.
+    fn schema() -> Vec<u8> {
+        let mut b = Vec::new();
+        s(&mut b, 0x00, "5");
+        s(&mut b, 0x00, "stats");
+        for (id, name) in [("1", "kills"), ("2", "distance"), ("3", "unused")] {
+            s(&mut b, 0x00, id);
+            put_str(&mut b, "name", name);
+            b.push(0x08);
+        }
+        s(&mut b, 0x00, "10");
+        s(&mut b, 0x00, "bits");
+        put_bit(&mut b, "0", "KILL_50", "statvalue", "kills", "0", "50");
+        put_bit(&mut b, "1", "WALK_10", "statvalue", "distance", "0", "10");
+        put_bit(&mut b, "2", "UNUSED_5", "statvalue", "unused", "0", "5");
+        put_bit(&mut b, "3", "ODD", "somethingelse", "kills", "0", "50");
+        put_bit(&mut b, "4", "DONE", "statvalue", "kills", "10", "20");
+        b.extend_from_slice(&[0x08, 0x08, 0x08, 0x08, 0x08]);
+        b
+    }
+
+    /// User stats: kills 37, distance 2.5, nothing for "unused", bit 4 unlocked.
+    fn stats() -> Vec<u8> {
+        let mut b = Vec::new();
+        s(&mut b, 0x00, "cache");
+        s(&mut b, 0x00, "1");
+        put_int(&mut b, "data", 37);
+        b.push(0x08);
+        s(&mut b, 0x00, "2");
+        s(&mut b, 0x03, "data");
+        b.extend_from_slice(&2.5f32.to_le_bytes());
+        b.push(0x08);
+        s(&mut b, 0x00, "10");
+        put_int(&mut b, "data", 1 << 4);
+        b.extend_from_slice(&[0x08, 0x08]);
+        b
+    }
+
+    #[test]
+    fn reads_progress_of_stat_achievements() {
+        let (_, list) = parse_game(&schema(), Some(&stats()), 5, "english").unwrap();
+        let by = |n: &str| list.iter().find(|a| a.apiname == n).unwrap();
+        assert_eq!(by("KILL_50").progress, Some(Progress { current: 37.0, max: 50.0 }));
+        assert_eq!(by("WALK_10").progress, Some(Progress { current: 2.5, max: 10.0 }));
+        // Steam leaves out stats that are still 0.
+        assert_eq!(by("UNUSED_5").progress, Some(Progress { current: 0.0, max: 5.0 }));
+        assert_eq!(by("ODD").progress, None);
+        assert!(by("DONE").achieved);
+        assert_eq!(by("DONE").progress, None);
+        // Plain stats are not achievements.
+        assert_eq!(list.len(), 5);
+    }
+
+    #[test]
+    fn no_progress_without_stats_file() {
+        let (_, list) = parse_game(&schema(), None, 5, "english").unwrap();
+        assert!(list.iter().all(|a| a.progress.is_none() && !a.achieved));
     }
 
     #[test]

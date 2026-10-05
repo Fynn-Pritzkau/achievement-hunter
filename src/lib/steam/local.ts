@@ -8,7 +8,13 @@ export interface LocalGame {
   statsMtime: number | null;
   /** Names and descriptions are in the requested language. */
   languageMatch: boolean;
-  achievements: (SchemaAchievement & PlayerAchievement)[];
+  achievements: (SchemaAchievement & PlayerAchievement & { progress?: StatProgress | null })[];
+}
+
+/** How far an open achievement is that Steam counts with a stat ("37 / 50"). Only in the local cache. */
+export interface StatProgress {
+  current: number;
+  max: number;
 }
 
 export interface LocalPlaytime {

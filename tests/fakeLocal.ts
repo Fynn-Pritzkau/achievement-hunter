@@ -8,6 +8,8 @@ export interface FakeLocalGame {
   languageMatch?: boolean;
   /** apiname → [unlocked, unlocktime] */
   achievements: Record<string, [boolean, number]>;
+  /** apiname → [current, max] for stat-counted achievements. */
+  progress?: Record<string, [number, number]>;
 }
 
 /** Stand-in for Steam's local cache. Counts reads. */
@@ -38,6 +40,7 @@ export class FakeLocal implements LocalSteam {
         icongray: '',
         achieved: ok,
         unlocktime: ok ? t : 0,
+        progress: g.progress?.[n] ? { current: g.progress[n][0], max: g.progress[n][1] } : null,
       })),
     };
   }
