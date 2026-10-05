@@ -1,0 +1,172 @@
+/**
+ * Everything that differs between the Tauri app and a plain browser tab
+ * (`npm run dev` without Tauri, handy for working on the UI).
+ */
+import { MemoryRepo, type Repo } from './db/repo';
+import type { FetchFn } from './steam/api';
+import { tauriLocalSteam, type LocalSteam } from './steam/local';
+
+export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+export async function openRepo(): Promise<Repo> {
+  if (isTauri) {
+    const { SqliteRepo } = await import('./db/sqlite');
+    return SqliteRepo.open();
+  }
+  return new LocalStorageRepo();
+}
+
+export async function steamTransport(): Promise<{ fetch: FetchFn; baseUrl: string }> {
+  if (isTauri) {
+    const http = await import('@tauri-apps/plugin-http');
+    return { fetch: http.fetch as FetchFn, baseUrl: 'https://api.steampowered.com' };
+  }
+  // Vite dev proxy, see vite.config.ts
+  return { fetch: (u, i) => fetch(u, i), baseUrl: '/steam-api' };
+}
+
+const KEY_NAME = 'steam-api-key';
+
+/** The API key lives in the Windows Credential Manager in the app; in the browser, in localStorage. */
+export async function loadApiKey(): Promise<string | null> {
+  if (isTauri) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<string | null>('get_secret', { name: KEY_NAME });
+  }
+  return localStorage.getItem(KEY_NAME);
+}
+
+export async function saveApiKey(value: string): Promise<void> {
+  if (isTauri) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('set_secret', { name: KEY_NAME, value });
+    return;
+  }
+  localStorage.setItem(KEY_NAME, value);
+}
+
+/** AppID of the game Steam is running right now, read from the registry. Free — no API call. */
+export async function runningAppId(): Promise<number | null> {
+  if (!isTauri) return null;
+  const { invoke } = await import('@tauri-apps/api/core');
+  const id = await invoke<number>('running_app_id');
+  return id > 0 ? id : null;
+}
+
+/** Steam's local cache (read-only). null in the browser, where there is no file access. */
+export async function openLocalSteam(steamid64: string, language: string): Promise<LocalSteam | null> {
+  if (!isTauri) return null;
+  const { invoke } = await import('@tauri-apps/api/core');
+  return tauriLocalSteam(invoke, steamid64, language);
+}
+
+export async function appVersion(): Promise<string> {
+  if (!isTauri) return 'dev';
+  const { getVersion } = await import('@tauri-apps/api/app');
+  return getVersion();
+}
+
+export interface AppUpdate {
+  version: string;
+  notes: string;
+  /** Downloads, verifies the signature, installs and restarts. Progress in percent, null = unknown size. */
+  install(onProgress?: (percent: number | null) => void): Promise<void>;
+}
+
+/** Asks the release feed for a newer signed version. null = up to date (or not the desktop app). */
+export async function checkForUpdate(): Promise<AppUpdate | null> {
+  if (!isTauri) return null;
+  const { check } = await import('@tauri-apps/plugin-updater');
+  const u = await check();
+  if (!u) return null;
+  return {
+    version: u.version,
+    notes: u.body ?? '',
+    async install(onProgress) {
+      let total = 0;
+      let got = 0;
+      await u.downloadAndInstall((e) => {
+        if (e.event === 'Started') total = e.data.contentLength ?? 0;
+        else if (e.event === 'Progress') {
+          got += e.data.chunkLength;
+          onProgress?.(total ? Math.min(100, (got / total) * 100) : null);
+        }
+      });
+      // On Windows the installer usually closes the app itself; this covers the rest.
+      const { relaunch } = await import('@tauri-apps/plugin-process');
+      await relaunch();
+    },
+  };
+}
+
+export async function notify(title: string, body: string): Promise<void> {
+  if (isTauri) {
+    const n = await import('@tauri-apps/plugin-notification');
+    if (!(await n.isPermissionGranted()) && (await n.requestPermission()) !== 'granted') return;
+    n.sendNotification({ title, body });
+    return;
+  }
+  if ('Notification' in window && Notification.permission === 'granted') new Notification(title, { body });
+}
+
+/** Browser fallback: the in-memory repo, persisted to localStorage after each write. */
+class LocalStorageRepo extends MemoryRepo {
+  private static KEY = 'achievement-hunter-db';
+  private timer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor() {
+    super();
+    try {
+      const raw = localStorage.getItem(LocalStorageRepo.KEY);
+      if (raw) {
+        const d = JSON.parse(raw);
+        this.games = new Map(d.games);
+        this.achievements = new Map(d.achievements);
+        this.snapshots = d.snapshots ?? [];
+        this.meta = new Map(d.meta);
+      }
+    } catch {
+      /* start empty */
+    }
+  }
+
+  private persist() {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      try {
+        localStorage.setItem(
+          LocalStorageRepo.KEY,
+          JSON.stringify({
+            games: [...this.games],
+            achievements: [...this.achievements],
+            snapshots: this.snapshots,
+            meta: [...this.meta],
+          }),
+        );
+      } catch {
+        /* quota exceeded — dev only */
+      }
+    }, 500);
+  }
+
+  override async saveGame(g: Parameters<MemoryRepo['saveGame']>[0]) {
+    await super.saveGame(g);
+    this.persist();
+  }
+  override async saveGames(g: Parameters<MemoryRepo['saveGames']>[0]) {
+    await super.saveGames(g);
+    this.persist();
+  }
+  override async saveAchievements(appid: number, list: Parameters<MemoryRepo['saveAchievements']>[1]) {
+    await super.saveAchievements(appid, list);
+    this.persist();
+  }
+  override async addSnapshots(s: Parameters<MemoryRepo['addSnapshots']>[0]) {
+    await super.addSnapshots(s);
+    this.persist();
+  }
+  override async setMeta(k: string, v: string) {
+    await super.setMeta(k, v);
+    this.persist();
+  }
+}
