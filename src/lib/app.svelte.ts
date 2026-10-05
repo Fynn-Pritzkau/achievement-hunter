@@ -16,8 +16,9 @@ import { SteamApi } from './steam/api';
 import { SyncEngine, type SyncProgress, type UnlockEvent } from './sync/engine';
 import { aggregate } from './sync/merge';
 import { Scheduler } from './sync/scheduler';
+import { libraryStats, newlyEarned, type Earned } from './appAchievements';
 import type { Achievement, Game } from './types';
-import { errorText, setLocale, systemLocale, t, type Locale } from './i18n.svelte';
+import { errorText, setLocale, systemLocale, t, type Locale, type MessageKey } from './i18n.svelte';
 import { fmtPercent } from './util';
 
 export interface Settings {
@@ -54,6 +55,8 @@ class AppState {
   lastSync = $state<number | null>(null);
   error = $state<string | null>(null);
   recentUnlocks = $state<UnlockEvent[]>([]);
+  /** Earned app achievements (the app's own, not Steam's), see appAchievements.ts. */
+  appAchievements = $state<Earned>({});
   version = $state('');
   update = $state<AppUpdate | null>(null);
   updateState = $state<'idle' | 'checking' | 'current' | 'installing' | 'error'>('idle');
@@ -63,6 +66,7 @@ class AppState {
   repo!: Repo;
   private engine: SyncEngine | null = null;
   private scheduler: Scheduler | null = null;
+  private appAchTimer: ReturnType<typeof setTimeout> | null = null;
 
   async init() {
     this.repo = await openRepo();
@@ -77,6 +81,7 @@ class AppState {
     this.games = await this.repo.getGames();
     const last = await this.repo.getMeta('lastSync');
     this.lastSync = last ? Number(last) : null;
+    await this.loadAppAchievements();
     const key = await loadApiKey();
     this.configured = !!key && !!(await this.repo.getMeta('steamid64'));
     this.ready = true;
@@ -177,6 +182,7 @@ class AppState {
     }
     this.progress = null;
     this.games = await this.repo.getGames();
+    this.scheduleAppAchCheck();
   }
 
   async syncGame(appid: number) {
@@ -196,6 +202,34 @@ class AppState {
     const i = this.games.findIndex((x) => x.appid === g.appid);
     if (i >= 0) this.games[i] = g;
     else this.games.push(g);
+    this.scheduleAppAchCheck();
+  }
+
+  private async loadAppAchievements() {
+    const raw = await this.repo.getMeta('appAchievements');
+    if (raw) this.appAchievements = JSON.parse(raw) as Earned;
+    this.scheduleAppAchCheck();
+  }
+
+  /** Bundles the many game updates of one sync into a single check. */
+  private scheduleAppAchCheck() {
+    if (this.appAchTimer) clearTimeout(this.appAchTimer);
+    this.appAchTimer = setTimeout(() => {
+      this.appAchTimer = null;
+      void this.checkAppAchievements();
+    }, 1000);
+  }
+
+  private async checkAppAchievements() {
+    const fresh = newlyEarned(libraryStats(this.games, Math.floor(Date.now() / 1000)), this.appAchievements);
+    if (!fresh.length) return;
+    const now = Date.now();
+    this.appAchievements = { ...this.appAchievements, ...Object.fromEntries(fresh.map((a) => [a.id, now])) };
+    await this.repo.setMeta('appAchievements', JSON.stringify(this.appAchievements));
+    if (!this.settings.notifyUnlocks) return;
+    // The first sync can earn a whole shelf at once: one summary instead of a burst.
+    if (fresh.length > 2) void notify(t('appAchs.notifyMany', { n: fresh.length }), fresh.map((a) => a.icon).join(' '));
+    else for (const a of fresh) void notify(t('appAchs.notify', { icon: a.icon }), t(`appAch.${a.id}` as MessageKey));
   }
 
   private onUnlock(e: UnlockEvent) {
