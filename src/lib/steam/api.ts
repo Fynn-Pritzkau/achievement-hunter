@@ -148,6 +148,18 @@ export class SteamApi {
     }));
   }
 
+  /**
+   * apiname → description, including hidden achievements, which GetSchemaForGame
+   * returns without one.
+   */
+  async getDescriptions(appid: number): Promise<Map<string, string>> {
+    const json = await this.call('IPlayerService/GetGameAchievements/v1', { appid, language: this.language });
+    const resp = json?.response;
+    if (!resp || typeof resp !== 'object') throw new SteamApiError('parse', `GetGameAchievements ${appid}: unexpected response`);
+    const list: any[] = resp.achievements ?? [];
+    return new Map(list.filter((a) => a.internal_name && a.localized_desc).map((a) => [a.internal_name, oneLine(a.localized_desc)]));
+  }
+
   /** null = the game has no stats at all. */
   async getPlayerAchievements(appid: number, steamid: string): Promise<PlayerAchievement[] | null> {
     const json = await this.call('ISteamUserStats/GetPlayerAchievements/v0001', { appid, steamid });

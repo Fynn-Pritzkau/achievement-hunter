@@ -183,6 +183,15 @@ class AppState {
     await this.engine?.syncGame(appid);
   }
 
+  private descriptionsTried = new Set<number>();
+
+  /** Fetches missing hidden descriptions for a stored game, at most once per session. True when something changed. */
+  async fillHiddenDescriptions(appid: number): Promise<boolean> {
+    if (!this.engine || this.descriptionsTried.has(appid)) return false;
+    this.descriptionsTried.add(appid);
+    return this.engine.fillHiddenDescriptions(appid).catch(() => false);
+  }
+
   private upsertLocal(g: Game) {
     const i = this.games.findIndex((x) => x.appid === g.appid);
     if (i >= 0) this.games[i] = g;
