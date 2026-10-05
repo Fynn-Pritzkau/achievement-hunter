@@ -53,6 +53,13 @@ export async function runningAppId(): Promise<number | null> {
   return id > 0 ? id : null;
 }
 
+/** Texts of the tray menu, which Rust creates before the UI knows the language. */
+export async function setTrayLabels(open: string, quit: string): Promise<void> {
+  if (!isTauri) return;
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('set_tray_labels', { open, quit });
+}
+
 /** Steam's local cache (read-only). null in the browser, where there is no file access. */
 export async function openLocalSteam(steamid64: string, language: string): Promise<LocalSteam | null> {
   if (!isTauri) return null;

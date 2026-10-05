@@ -1,5 +1,6 @@
 <script lang="ts">
   import { app } from '../lib/app.svelte';
+  import { t, type MessageKey } from '../lib/i18n.svelte';
   import { SMART_LISTS, SORTS, matchesQuery, sortGames, type SortKey } from '../lib/lists';
   import { completion, isPerfect } from '../lib/types';
   import { capsuleUrl, fmtDate, fmtHours, fmtPercent } from '../lib/util';
@@ -28,18 +29,18 @@
 
 <div class="toolbar">
   <div>
-    <h2>{list.label}</h2>
-    <span class="muted small">{games.length} Spiele · {list.hint}</span>
+    <h2>{t(`list.${list.id}` as MessageKey)}</h2>
+    <span class="muted small">{t('library.count', { n: games.length })} · {t(`list.${list.id}.hint` as MessageKey)}</span>
   </div>
-  <input placeholder="Filtern … (z. B. min:50 status:paused)" bind:value={query} />
+  <input placeholder={t('library.filter')} bind:value={query} />
   <select value={sort} onchange={(e) => (sortOverride = e.currentTarget.value as SortKey)}>
-    {#each SORTS as s}<option value={s.key}>{s.label}</option>{/each}
+    {#each SORTS as s}<option value={s}>{t(`sort.${s}`)}</option>{/each}
   </select>
 </div>
 
 {#if games.length === 0}
   <p class="muted empty">
-    {app.games.length === 0 ? 'Bibliothek wird geladen …' : 'Nichts in dieser Liste.'}
+    {app.games.length === 0 ? t('library.loading') : t('library.empty')}
   </p>
 {:else}
   <ul>
@@ -50,18 +51,18 @@
           <img src={capsuleUrl(g.appid)} alt="" loading="lazy" onerror={(e) => ((e.currentTarget as HTMLImageElement).style.visibility = 'hidden')} />
           <div class="main">
             <div class="title">
-              {#if g.pinned}<span title="Angeheftet">📌</span>{/if}
+              {#if g.pinned}<span title={t('library.pinned')}>📌</span>{/if}
               <span class="name">{g.name}</span>
-              {#if g.appid === app.runningAppId}<span class="chip accent">läuft</span>{/if}
-              {#if g.wasPerfect && !isPerfect(g)}<span class="chip warn" title="War 100 %, neue Achievements">Perfect verloren</span>{/if}
+              {#if g.appid === app.runningAppId}<span class="chip accent">{t('library.running')}</span>{/if}
+              {#if g.wasPerfect && !isPerfect(g)}<span class="chip warn" title={t('library.lostHint')}>{t('list.lost')}</span>{/if}
             </div>
             {#if g.total}
               <div class="bar" class:perfect={isPerfect(g)}><i style="width:{pct}%"></i></div>
             {/if}
             <div class="meta small muted">
-              {#if g.total}<span>{g.unlocked}/{g.total}</span>{:else if g.total === 0}<span>keine Achievements</span>{:else}<span>…</span>{/if}
-              {#if g.easyOpen}<span class="chip accent" title="Offene Achievements, die über 50 % der Spieler haben">{g.easyOpen} easy</span>{/if}
-              {#if g.rarestOpen != null && !isPerfect(g)}<span title="Seltenstes offenes Achievement">seltenstes {fmtPercent(g.rarestOpen)}</span>{/if}
+              {#if g.total}<span>{g.unlocked}/{g.total}</span>{:else if g.total === 0}<span>{t('library.noAchievements')}</span>{:else}<span>…</span>{/if}
+              {#if g.easyOpen}<span class="chip accent" title={t('library.easyHint')}>{t('library.easy', { n: g.easyOpen })}</span>{/if}
+              {#if g.rarestOpen != null && !isPerfect(g)}<span title={t('library.rarestHint')}>{t('library.rarest', { p: fmtPercent(g.rarestOpen) })}</span>{/if}
               <span>{fmtHours(g.playtime)}</span>
               {#if g.lastPlayed}<span>{fmtDate(g.lastPlayed)}</span>{/if}
             </div>

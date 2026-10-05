@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { app } from './lib/app.svelte';
+  import { t } from './lib/i18n.svelte';
   import Setup from './views/Setup.svelte';
   import Sidebar from './views/Sidebar.svelte';
   import Library from './views/Library.svelte';
@@ -32,7 +33,7 @@
 <svelte:window onkeydown={onKey} />
 
 {#if !app.ready}
-  <div class="center muted">Lade …</div>
+  <div class="center muted">{t('app.loading')}</div>
 {:else if !app.configured}
   <Setup />
 {:else}

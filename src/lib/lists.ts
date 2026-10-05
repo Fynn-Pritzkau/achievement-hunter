@@ -1,9 +1,8 @@
 import { completion, isPerfect, type Game } from './types';
 
 export interface SmartList {
+  /** Label and hint are the i18n keys `list.<id>` and `list.<id>.hint`. */
   id: string;
-  label: string;
-  hint: string;
   filter: (g: Game, ctx: ListContext) => boolean;
   /** Sort used when the list is opened. */
   sort: SortKey;
@@ -19,33 +18,23 @@ const has = (g: Game) => !!g.total && !g.hidden;
 const pct = (g: Game) => completion(g) ?? 0;
 
 export const SMART_LISTS: SmartList[] = [
-  { id: 'running', label: 'Läuft gerade', hint: 'Das Spiel, das Steam gerade ausführt', filter: (g, c) => g.appid === c.runningAppId, sort: 'recent' },
-  { id: 'all', label: 'Alle mit Achievements', hint: 'Jedes Spiel mit Achievements', filter: (g) => has(g), sort: 'recent' },
-  { id: 'almost', label: 'Fast fertig', hint: 'Ab 80 %, aber noch nicht 100 %', filter: (g) => has(g) && pct(g) >= 80 && !isPerfect(g), sort: 'remaining' },
-  { id: 'easy', label: 'Easy Wins', hint: 'Offene Achievements, die über 50 % der Spieler haben', filter: (g) => has(g) && g.easyOpen > 0, sort: 'easy' },
-  { id: 'lost', label: 'Perfect verloren', hint: 'War 100 %, ein Update hat neue Achievements gebracht', filter: (g) => has(g) && g.wasPerfect && !isPerfect(g), sort: 'remaining' },
-  { id: 'started', label: 'Angefangen, liegen gelassen', hint: 'Über 50 %, seit 30 Tagen nicht gespielt', filter: (g, c) => has(g) && pct(g) >= 50 && !isPerfect(g) && c.now - g.lastPlayed > 30 * 86400, sort: 'completion' },
-  { id: 'rare', label: 'Seltenste offene', hint: 'Spiele mit offenen Achievements unter 5 %', filter: (g) => has(g) && g.rarestOpen != null && g.rarestOpen < 5, sort: 'rarest' },
-  { id: 'perfect', label: 'Perfect Games', hint: '100 %', filter: (g) => has(g) && isPerfect(g), sort: 'recentUnlock' },
-  { id: 'unplayed', label: 'Nie angefangen', hint: 'Mit Achievements, 0 Minuten gespielt', filter: (g) => has(g) && g.playtime === 0, sort: 'name' },
-  { id: 'none', label: 'Ohne Achievements', hint: 'Spiele ohne Achievements', filter: (g) => g.total === 0 && !g.hidden, sort: 'name' },
-  { id: 'hidden', label: 'Ausgeblendet', hint: 'Von dir ausgeblendete Spiele', filter: (g) => g.hidden, sort: 'name' },
+  { id: 'running', filter: (g, c) => g.appid === c.runningAppId, sort: 'recent' },
+  { id: 'all', filter: (g) => has(g), sort: 'recent' },
+  { id: 'almost', filter: (g) => has(g) && pct(g) >= 80 && !isPerfect(g), sort: 'remaining' },
+  { id: 'easy', filter: (g) => has(g) && g.easyOpen > 0, sort: 'easy' },
+  { id: 'lost', filter: (g) => has(g) && g.wasPerfect && !isPerfect(g), sort: 'remaining' },
+  { id: 'started', filter: (g, c) => has(g) && pct(g) >= 50 && !isPerfect(g) && c.now - g.lastPlayed > 30 * 86400, sort: 'completion' },
+  { id: 'rare', filter: (g) => has(g) && g.rarestOpen != null && g.rarestOpen < 5, sort: 'rarest' },
+  { id: 'perfect', filter: (g) => has(g) && isPerfect(g), sort: 'recentUnlock' },
+  { id: 'unplayed', filter: (g) => has(g) && g.playtime === 0, sort: 'name' },
+  { id: 'none', filter: (g) => g.total === 0 && !g.hidden, sort: 'name' },
+  { id: 'hidden', filter: (g) => g.hidden, sort: 'name' },
 ];
 
 export type SortKey = 'recent' | 'recentUnlock' | 'completion' | 'remaining' | 'effort' | 'easy' | 'rarest' | 'rarity' | 'playtime' | 'name';
 
-export const SORTS: { key: SortKey; label: string }[] = [
-  { key: 'recent', label: 'Zuletzt gespielt' },
-  { key: 'recentUnlock', label: 'Letzter Unlock' },
-  { key: 'completion', label: 'Fortschritt' },
-  { key: 'remaining', label: 'Wenigste offen' },
-  { key: 'effort', label: 'Wenigster Aufwand' },
-  { key: 'easy', label: 'Meiste Easy Wins' },
-  { key: 'rarest', label: 'Seltenstes offenes' },
-  { key: 'rarity', label: 'Rarity-Punkte' },
-  { key: 'playtime', label: 'Spielzeit' },
-  { key: 'name', label: 'Name' },
-];
+/** Labels are the i18n keys `sort.<key>`. */
+export const SORTS: SortKey[] = ['recent', 'recentUnlock', 'completion', 'remaining', 'effort', 'easy', 'rarest', 'rarity', 'playtime', 'name'];
 
 const remaining = (g: Game) => (g.total ?? 0) - g.unlocked;
 

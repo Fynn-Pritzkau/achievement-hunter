@@ -1,7 +1,7 @@
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, WindowEvent,
+    AppHandle, Manager, State, WindowEvent, Wry,
 };
 
 mod steam_local;
@@ -43,6 +43,18 @@ fn running_app_id() -> u32 {
     }
 }
 
+/// Tray menu entries, kept so the UI can relabel them when the language changes.
+struct TrayItems {
+    open: MenuItem<Wry>,
+    quit: MenuItem<Wry>,
+}
+
+#[tauri::command]
+fn set_tray_labels(items: State<'_, TrayItems>, open: String, quit: String) -> Result<(), String> {
+    items.open.set_text(open).map_err(|e| e.to_string())?;
+    items.quit.set_text(quit).map_err(|e| e.to_string())
+}
+
 fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
@@ -64,6 +76,7 @@ pub fn run() {
             get_secret,
             set_secret,
             running_app_id,
+            set_tray_labels,
             steam_local::local_achievements,
             steam_local::local_playtimes,
             steam_local::local_stats_changed
@@ -93,6 +106,7 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
+            app.manage(TrayItems { open, quit });
             Ok(())
         })
         // Closing the window keeps the app in the tray so syncing and live tracking continue.

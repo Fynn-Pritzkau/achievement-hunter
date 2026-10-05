@@ -1,5 +1,6 @@
 <script lang="ts">
   import { app } from '../lib/app.svelte';
+  import { t } from '../lib/i18n.svelte';
   import { completion } from '../lib/types';
 
   let { onClose, onOpen }: { onClose: () => void; onOpen: (appid: number) => void } = $props();
@@ -52,7 +53,7 @@
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div class="box" onclick={(e) => e.stopPropagation()}>
     <!-- svelte-ignore a11y_autofocus -->
-    <input autofocus placeholder="Spiel suchen …" bind:value={query} onkeydown={onKey} />
+    <input autofocus placeholder={t('palette.placeholder')} bind:value={query} onkeydown={onKey} />
     <ul>
       {#each results as g, i (g.appid)}
         {@const pct = completion(g)}

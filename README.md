@@ -2,7 +2,7 @@
 
 A lightweight Windows app for Steam achievement hunters. It shows which games are closest to 100 %, which open achievements are easy, and which are rare. It also notifies you the moment you unlock something.
 
-> The app's interface is in German. Achievement names can be shown in German or English.
+> The interface is available in English and German (switch it under Settings → App language). Achievement names can be shown in German or English.
 
 ## Download
 
