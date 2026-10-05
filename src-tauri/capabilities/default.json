@@ -11,6 +11,10 @@
     "updater:default",
     "process:allow-restart",
     {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "https://*" }, { "url": "steam://*" }]
+    },
+    {
       "identifier": "http:default",
       "allow": [{ "url": "https://api.steampowered.com/*" }]
     }

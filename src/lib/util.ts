@@ -36,6 +36,13 @@ export function capsuleUrl(appid: number): string {
   return `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${appid}/capsule_231x87.jpg`;
 }
 
+/** Library images to try in order: newer games have no small capsule, only a header; the icon always exists. */
+export function capsuleUrls(appid: number, iconHash: string): string[] {
+  const urls = [capsuleUrl(appid), coverUrl(appid)];
+  if (iconHash) urls.push(`https://media.steampowered.com/steamcommunity/public/images/apps/${appid}/${iconHash}.jpg`);
+  return urls;
+}
+
 export function fmtHours(minutes: number): string {
   if (minutes < 60) return `${minutes} min`;
   const h = minutes / 60;

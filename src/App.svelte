@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { app } from './lib/app.svelte';
   import { t } from './lib/i18n.svelte';
+  import { openExternal } from './lib/platform';
   import Setup from './views/Setup.svelte';
   import Sidebar from './views/Sidebar.svelte';
   import Library from './views/Library.svelte';
@@ -28,10 +29,18 @@
     }
   }
 
+  /** External links (guides, steam://run) go to the system browser or Steam instead of the WebView. */
+  function onClick(e: MouseEvent) {
+    const a = (e.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null;
+    if (!a || !/^(https?|steam):/i.test(a.href)) return;
+    e.preventDefault();
+    openExternal(a.href).catch((err) => (app.error = String(err)));
+  }
+
   const openGame = $derived(openAppId ? app.games.find((g) => g.appid === openAppId) ?? null : null);
 </script>
 
-<svelte:window onkeydown={onKey} />
+<svelte:window onkeydown={onKey} onclick={onClick} />
 
 {#if !app.ready}
   <div class="center muted">{t('app.loading')}</div>

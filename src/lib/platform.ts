@@ -106,6 +106,16 @@ export async function checkForUpdate(): Promise<AppUpdate | null> {
   };
 }
 
+/** Opens a link in the default browser (or Steam for steam://). The WebView ignores target="_blank". */
+export async function openExternal(url: string): Promise<void> {
+  if (isTauri) {
+    const { openUrl } = await import('@tauri-apps/plugin-opener');
+    await openUrl(url);
+    return;
+  }
+  window.open(url, '_blank', 'noreferrer');
+}
+
 export async function notify(title: string, body: string): Promise<void> {
   if (isTauri) {
     const n = await import('@tauri-apps/plugin-notification');

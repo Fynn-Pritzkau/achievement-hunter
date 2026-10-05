@@ -3,11 +3,20 @@
   import { t, type MessageKey } from '../lib/i18n.svelte';
   import { SMART_LISTS, SORTS, matchesQuery, sortGames, type SortKey } from '../lib/lists';
   import { completion, isPerfect } from '../lib/types';
-  import { capsuleUrl, fmtDate, fmtHours, fmtPercent } from '../lib/util';
+  import { capsuleUrls, fmtDate, fmtHours, fmtPercent } from '../lib/util';
 
   let { listId, onOpen }: { listId: string; onOpen: (appid: number) => void } = $props();
 
   let query = $state('');
+
+  /** Falls back to the next candidate URL; hides the image when none loads. */
+  function nextImage(e: Event, urls: string[]) {
+    const img = e.currentTarget as HTMLImageElement;
+    const i = Number(img.dataset.try ?? 0) + 1;
+    img.dataset.try = String(i);
+    if (i < urls.length) img.src = urls[i];
+    else img.style.visibility = 'hidden';
+  }
   let sortOverride = $state<SortKey | null>(null);
 
   const list = $derived(SMART_LISTS.find((l) => l.id === listId) ?? SMART_LISTS[1]);
@@ -48,7 +57,7 @@
       {@const pct = completion(g)}
       <li>
         <button class="row" onclick={() => onOpen(g.appid)}>
-          <img src={capsuleUrl(g.appid)} alt="" loading="lazy" onerror={(e) => ((e.currentTarget as HTMLImageElement).style.visibility = 'hidden')} />
+          <img src={capsuleUrls(g.appid, g.iconHash)[0]} alt="" loading="lazy" onerror={(e) => nextImage(e, capsuleUrls(g.appid, g.iconHash))} />
           <div class="main">
             <div class="title">
               {#if g.pinned}<span title={t('library.pinned')}>📌</span>{/if}
