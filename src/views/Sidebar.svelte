@@ -1,5 +1,6 @@
 <script lang="ts">
   import { app } from '../lib/app.svelte';
+  import { t, type MessageKey } from '../lib/i18n.svelte';
   import { SMART_LISTS, totals } from '../lib/lists';
 
   let {
@@ -17,14 +18,14 @@
   const running = $derived(app.games.find((g) => g.appid === app.runningAppId));
 
   function lastSyncLabel(ms: number | null) {
-    if (!ms) return 'noch nie';
+    if (!ms) return t('sidebar.never');
     const min = Math.round((Date.now() - ms) / 60000);
-    return min < 1 ? 'gerade eben' : min < 60 ? `vor ${min} min` : `vor ${Math.round(min / 60)} h`;
+    return min < 1 ? t('sidebar.justNow') : min < 60 ? t('sidebar.minAgo', { n: min }) : t('sidebar.hAgo', { n: Math.round(min / 60) });
   }
 </script>
 
 <aside>
-  <button class="search" onclick={onSearch}><span>Suchen …</span><kbd>Ctrl K</kbd></button>
+  <button class="search" onclick={onSearch}><span>{t('sidebar.search')}</span><kbd>Ctrl K</kbd></button>
 
   {#if running}
     <button class="live" onclick={() => { listId = 'running'; onSelect(); }}>
@@ -40,41 +41,41 @@
         <button
           class="ghost item"
           class:active={listId === l.id}
-          title={l.hint}
+          title={t(`list.${l.id}.hint` as MessageKey)}
           onclick={() => { listId = l.id; onSelect(); }}
         >
-          <span>{l.label}</span><span class="muted small">{counts[l.id]}</span>
+          <span>{t(`list.${l.id}` as MessageKey)}</span><span class="muted small">{counts[l.id]}</span>
         </button>
       {/if}
     {/each}
   </nav>
 
   <div class="stats">
-    <div><b>{stats.perfect}</b><span class="muted small">Perfect</span></div>
-    <div><b>{Math.round(stats.avgCompletion)} %</b><span class="muted small">Ø Completion</span></div>
-    <div><b>{stats.unlocked}</b><span class="muted small">Achievements</span></div>
-    <div><b>{stats.rarityScore}</b><span class="muted small">Rarity-Punkte</span></div>
+    <div><b>{stats.perfect}</b><span class="muted small">{t('sidebar.perfect')}</span></div>
+    <div><b>{Math.round(stats.avgCompletion)} %</b><span class="muted small">{t('sidebar.avgCompletion')}</span></div>
+    <div><b>{stats.unlocked}</b><span class="muted small">{t('sidebar.achievements')}</span></div>
+    <div><b>{stats.rarityScore}</b><span class="muted small">{t('sidebar.rarityPoints')}</span></div>
   </div>
 
   <footer>
     {#if app.update}
       <button class="update" onclick={() => app.installUpdate()} disabled={app.updateState === 'installing'} title={app.update.notes || undefined}>
         {#if app.updateState === 'installing'}
-          Update wird installiert{app.updateProgress != null ? ` … ${Math.round(app.updateProgress)} %` : ' …'}
+          {app.updateProgress != null ? t('sidebar.installingPct', { p: Math.round(app.updateProgress) }) : t('sidebar.installing')}
         {:else}
-          ⬆ Update auf {app.update.version} installieren
+          {t('sidebar.installUpdate', { v: app.update.version })}
         {/if}
       </button>
     {/if}
     {#if app.progress}
-      <div class="small">Sync {app.progress.done}/{app.progress.total}</div>
+      <div class="small">{t('sidebar.syncProgress', { done: app.progress.done, total: app.progress.total })}</div>
       <div class="bar"><i style="width:{(app.progress.done / Math.max(app.progress.total, 1)) * 100}%"></i></div>
       {#if app.progress.current}<div class="small muted ellipsis">{app.progress.current}</div>{/if}
     {:else}
       <div class="row">
-        <span class="small muted">Sync {lastSyncLabel(app.lastSync)}</span>
-        <button class="ghost small" onclick={() => app.sync()} title="Jetzt synchronisieren">↻</button>
-        <button class="ghost small" onclick={onSettings} title="Einstellungen">⚙</button>
+        <span class="small muted">{t('sidebar.lastSync', { when: lastSyncLabel(app.lastSync) })}</span>
+        <button class="ghost small" onclick={() => app.sync()} title={t('sidebar.syncNow')}>↻</button>
+        <button class="ghost small" onclick={onSettings} title={t('settings.title')}>⚙</button>
       </div>
     {/if}
     {#if app.error}<div class="small error">{app.error}</div>{/if}

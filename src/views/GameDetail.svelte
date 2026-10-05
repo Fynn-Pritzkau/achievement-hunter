@@ -2,23 +2,14 @@
   import { app } from '../lib/app.svelte';
   import { STATUSES, completion, isPerfect, type Achievement, type Game, type Status } from '../lib/types';
   import { coverUrl, fmtDate, fmtHours, fmtPercent } from '../lib/util';
+  import { isMessageKey, t } from '../lib/i18n.svelte';
 
   let { game, onBack }: { game: Game; onBack: () => void } = $props();
 
-  const STATUS_LABEL: Record<Status, string> = {
-    next: 'Als Nächstes',
-    playing: 'Spiele ich',
-    paused: 'Pausiert',
-    completed: 'Abgeschlossen',
-    dropped: 'Abgebrochen',
-  };
-  const TAG_LABEL: Record<string, string> = {
-    online: 'Online',
-    coop: 'Koop',
-    difficulty: 'Schwierigkeit',
-    collectible: 'Sammeln',
-    grind: 'Grind',
-    speedrun: 'Zeitlimit',
+  // Auto tags have translations; manual tags are shown as typed.
+  const tagLabel = (tag: string) => {
+    const key = `tag.${tag}`;
+    return isMessageKey(key) ? t(key) : tag;
   };
 
   type View = 'open' | 'pinned' | 'done' | 'all';
@@ -89,18 +80,18 @@
 </script>
 
 <header style="--cover:url({coverUrl(game.appid)})">
-  <button class="ghost back" onclick={onBack}>← Zurück</button>
+  <button class="ghost back" onclick={onBack}>{t('game.back')}</button>
   <div class="head">
     <h1>{game.name}</h1>
     <div class="meta">
       {#if game.total}
         <b class:gold={isPerfect(game)}>{game.unlocked}/{game.total} · {Math.floor(pct ?? 0)} %</b>
       {:else if game.total === 0}
-        <b>Keine Achievements</b>
+        <b>{t('game.noAchievements')}</b>
       {/if}
       <span>{fmtHours(game.playtime)}</span>
-      {#if game.lastPlayed}<span>zuletzt {fmtDate(game.lastPlayed)}</span>{/if}
-      <span>{Math.round(game.rarityScore)} Rarity-Punkte</span>
+      {#if game.lastPlayed}<span>{t('game.lastPlayed', { date: fmtDate(game.lastPlayed) ?? '' })}</span>{/if}
+      <span>{t('game.rarityPoints', { n: Math.round(game.rarityScore) })}</span>
     </div>
     {#if game.total}<div class="bar" class:perfect={isPerfect(game)}><i style="width:{pct}%"></i></div>{/if}
   </div>
@@ -109,37 +100,37 @@
       value={game.status ?? ''}
       onchange={(e) => app.updateGame({ ...game, status: (e.currentTarget.value || null) as Status | null, statusManual: true })}
     >
-      <option value="">– Status –</option>
-      {#each STATUSES as s}<option value={s}>{STATUS_LABEL[s]}</option>{/each}
+      <option value="">{t('game.statusNone')}</option>
+      {#each STATUSES as s}<option value={s}>{t(`status.${s}`)}</option>{/each}
     </select>
     {#if game.statusManual}
-      <button class="ghost small" title="Status wieder automatisch setzen" onclick={() => app.updateGame({ ...game, statusManual: false })}>auto</button>
+      <button class="ghost small" title={t('game.statusAuto')} onclick={() => app.updateGame({ ...game, statusManual: false })}>auto</button>
     {/if}
-    <button onclick={() => app.updateGame({ ...game, pinned: !game.pinned })}>{game.pinned ? '📌 Gelöst' : '📌 Anheften'}</button>
-    <button onclick={() => app.updateGame({ ...game, hidden: !game.hidden })}>{game.hidden ? 'Einblenden' : 'Ausblenden'}</button>
+    <button onclick={() => app.updateGame({ ...game, pinned: !game.pinned })}>{game.pinned ? t('game.unpin') : t('game.pin')}</button>
+    <button onclick={() => app.updateGame({ ...game, hidden: !game.hidden })}>{game.hidden ? t('game.show') : t('game.hide')}</button>
     <button onclick={refresh} disabled={refreshing}>{refreshing ? '…' : '↻'}</button>
-    <a class="btn" href={`steam://run/${game.appid}`}>▶ Starten</a>
+    <a class="btn" href={`steam://run/${game.appid}`}>{t('game.launch')}</a>
   </div>
 </header>
 
 {#if list.length}
   <div class="filters">
     <div class="tabs">
-      <button class:active={view === 'open'} onclick={() => (view = 'open')}>Offen {list.filter((a) => !a.achieved).length}</button>
-      {#if pinnedCount}<button class:active={view === 'pinned'} onclick={() => (view = 'pinned')}>📌 Fokus {pinnedCount}</button>{/if}
-      <button class:active={view === 'done'} onclick={() => (view = 'done')}>Erledigt {game.unlocked}</button>
-      <button class:active={view === 'all'} onclick={() => (view = 'all')}>Alle</button>
+      <button class:active={view === 'open'} onclick={() => (view = 'open')}>{t('game.open', { n: list.filter((a) => !a.achieved).length })}</button>
+      {#if pinnedCount}<button class:active={view === 'pinned'} onclick={() => (view = 'pinned')}>{t('game.focus', { n: pinnedCount })}</button>{/if}
+      <button class:active={view === 'done'} onclick={() => (view = 'done')}>{t('game.done', { n: game.unlocked })}</button>
+      <button class:active={view === 'all'} onclick={() => (view = 'all')}>{t('game.all')}</button>
     </div>
     <div class="tags">
-      {#each tags as t}
-        <button class="chip" class:accent={tag === t} onclick={() => (tag = tag === t ? null : t)}>{TAG_LABEL[t] ?? t}</button>
+      {#each tags as tg}
+        <button class="chip" class:accent={tag === tg} onclick={() => (tag = tag === tg ? null : tg)}>{tagLabel(tg)}</button>
       {/each}
     </div>
     <select bind:value={order}>
-      <option value="easy">Einfachste zuerst</option>
-      <option value="rare">Seltenste zuerst</option>
-      <option value="recent">Zuletzt freigeschaltet</option>
-      <option value="name">Name</option>
+      <option value="easy">{t('game.orderEasy')}</option>
+      <option value="rare">{t('game.orderRare')}</option>
+      <option value="recent">{t('game.orderRecent')}</option>
+      <option value="name">{t('game.orderName')}</option>
     </select>
   </div>
 
@@ -152,7 +143,7 @@
           <button class="ghost text" onclick={() => (expanded = expanded === a.apiname ? null : a.apiname)}>
             <div class="name">
               {a.name}
-              {#each a.tags as t}<span class="chip">{TAG_LABEL[t] ?? t}</span>{/each}
+              {#each a.tags as tg}<span class="chip">{tagLabel(tg)}</span>{/each}
               {#if a.note}<span class="chip" title={a.note}>📝</span>{/if}
             </div>
             {#if spoiler}
@@ -162,7 +153,7 @@
                 tabindex="0"
                 onclick={(e) => { e.stopPropagation(); revealed = new Set([...revealed, a.apiname]); }}
                 onkeydown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); revealed = new Set([...revealed, a.apiname]); } }}
-              >Verstecktes Achievement – klicken zum Aufdecken</span>
+              >{t('game.spoiler')}</span>
             {:else}
               <div class="small muted">{a.description || '—'}</div>
             {/if}
@@ -172,7 +163,7 @@
             {#if a.achieved}
               <span class="small muted">{fmtDate(a.unlocktime)}</span>
             {:else}
-              <button class="ghost" title={a.pinned ? 'Aus Fokus entfernen' : 'In den Fokus'} onclick={() => save(a, { pinned: !a.pinned })}>
+              <button class="ghost" title={a.pinned ? t('game.unfocus') : t('game.focusAdd')} onclick={() => save(a, { pinned: !a.pinned })}>
                 {a.pinned ? '📌' : '📍'}
               </button>
             {/if}
@@ -182,7 +173,7 @@
           <div class="extra">
             <textarea
               rows="2"
-              placeholder="Eigene Notiz, z. B. „Kapitel 3, nach dem Boss links“"
+              placeholder={t('game.notePlaceholder')}
               value={a.note}
               onchange={(e) => save(a, { note: e.currentTarget.value })}
             ></textarea>
@@ -190,7 +181,7 @@
               {#each guides(a) as g}<a href={g.url} target="_blank" rel="noreferrer">{g.label} ↗</a>{/each}
               <label class="small">
                 <input type="checkbox" checked={a.excluded} onchange={(e) => save(a, { excluded: e.currentTarget.checked })} />
-                Kaputt/unerreichbar – nicht mitzählen
+                {t('game.exclude')}
               </label>
             </div>
           </div>
@@ -199,7 +190,7 @@
     {/each}
   </ul>
 {:else if game.total === null}
-  <p class="muted pad">Achievements werden beim nächsten Sync geladen …</p>
+  <p class="muted pad">{t('game.loadingNext')}</p>
 {/if}
 
 <style>

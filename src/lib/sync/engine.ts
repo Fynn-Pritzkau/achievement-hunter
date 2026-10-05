@@ -34,6 +34,8 @@ export interface SyncResult {
   errors: { appid: number; name: string; message: string }[];
   /** Set when the run stopped early (private profile, bad key, rate limit). */
   aborted: string | null;
+  /** The error behind `aborted`, so the UI can show it in its own language. */
+  abortedError?: unknown;
 }
 
 export interface EngineOptions {
@@ -201,6 +203,7 @@ export class SyncEngine {
           if (isFatal(e)) {
             stop = true;
             result.aborted = message;
+            result.abortedError = e;
           }
         }
         this.opts.onProgress?.({ done: ++done, total: tasks.length, current: name });

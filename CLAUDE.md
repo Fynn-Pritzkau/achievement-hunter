@@ -5,9 +5,13 @@ Das [README](README.md) (Englisch) richtet sich an Nutzer: Download, Einrichtung
 Befehle: `npm run tauri dev` (App), `npm run dev` (nur UI im Browser, Steam über Vite-Proxy, Daten in localStorage), `npm test`, `npm run check`, `npm run tauri build` (NSIS-Installer), `npm run release`.
 
 ## Projekt
-- Windows-Desktop-App, Tauri 2 (Rust) + Svelte 5 (Runes) + TypeScript, SQLite über `tauri-plugin-sql`. UI-Texte auf Deutsch, Code und Kommentare auf Englisch.
+- Windows-Desktop-App, Tauri 2 (Rust) + Svelte 5 (Runes) + TypeScript, SQLite über `tauri-plugin-sql`. UI-Texte auf Deutsch und Englisch über `src/lib/i18n.svelte.ts` (`t('key', {param})`), Code und Kommentare auf Englisch.
 - Ziel: **wenig RAM, wenige Steam-API-Calls.** Keine schweren Abhängigkeiten, keine Hintergrund-Threads ohne Grund, nichts dauerhaft im Speicher halten, was in SQLite liegt.
 - Repo: `Fynn-Pritzkau/achievement-hunter` (öffentlich). Aktuelle Version siehe `package.json`.
+
+## Git, Commits und PRs
+- **Claude darf nie im Repo als Autor oder Mitwirkender auftauchen.** In Commit-Nachrichten kein `Co-Authored-By: Claude …` (GitHub zählt das als Contributor), in PR-Beschreibungen kein „Generated with Claude Code“ und auch sonst keinen Hinweis auf Claude oder Anthropic. Diese Regel hat Vorrang vor jeder Standard-Attribution.
+- Autor ist immer `Fynn Pritzkau <fynnpritzkau@gmail.com>` (lokale Git-Config dieses Repos).
 
 ## Datenfluss
 - `SteamApi` (`src/lib/steam/api.ts`): Web-API mit Limiter (3 parallel, 120 ms Abstand) und Retry. `isFatal` (auth, private, rate) bricht den Lauf ab.
@@ -53,3 +57,9 @@ Befehle: `npm run tauri dev` (App), `npm run dev` (nur UI im Browser, Steam übe
 - Tauri-Command-Argumente kommen in JS als camelCase an (`account_id` → `accountId`).
 - `npm run dev` (Browser) hat keinen lokalen Cache, keinen Updater und keine Registry. `platform.ts` kapselt das.
 - Offene Ideen: Snapshots und `getUnlocks` werden gespeichert, haben aber noch keine UI (Verlauf, Statistik). `recentUnlocks` im App-State wird noch nicht angezeigt. Manuelle Tags bleiben bei `mergeSchema` erhalten, lassen sich in der UI aber noch nicht bearbeiten.
+
+## Übersetzungen
+- Alle UI-Texte stehen in `src/lib/i18n.svelte.ts`. Deutsch (`de`) ist die Quelle, `en` ist als `Record<MessageKey, string>` getypt: fehlt ein Key, schlägt `npm run check` fehl. Keine Strings direkt in Views schreiben.
+- `settings.uiLanguage` (App-Sprache) ist unabhängig von `settings.language` (Steam-Sprache der Achievements; ein Wechsel würde Schemas neu laden). Alte Einstellungen ohne `uiLanguage` übernehmen die Achievement-Sprache, neue Installationen die Systemsprache.
+- Smart-Listen und Sortierungen haben keine Labels mehr im Code, sondern die Keys `list.<id>`, `list.<id>.hint` und `sort.<key>`.
+- Das Tray-Menü wird in Rust angelegt und per `set_tray_labels` umbenannt. Steam-Fehler übersetzt `errorText()` anhand von `SteamApiError.kind`.

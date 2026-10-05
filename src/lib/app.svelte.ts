@@ -8,6 +8,7 @@ import {
   openRepo,
   runningAppId,
   saveApiKey,
+  setTrayLabels,
   steamTransport,
   type AppUpdate,
 } from './platform';
@@ -16,10 +17,14 @@ import { SyncEngine, type SyncProgress, type UnlockEvent } from './sync/engine';
 import { aggregate } from './sync/merge';
 import { Scheduler } from './sync/scheduler';
 import type { Achievement, Game } from './types';
+import { errorText, setLocale, systemLocale, t, type Locale } from './i18n.svelte';
 import { fmtPercent } from './util';
 
 export interface Settings {
   steamId: string;
+  /** Language of the app itself. */
+  uiLanguage: Locale;
+  /** Steam language for achievement names and descriptions. */
   language: string;
   intervalMinutes: number;
   staleDays: number;
@@ -30,6 +35,7 @@ export interface Settings {
 
 const DEFAULT_SETTINGS: Settings = {
   steamId: '',
+  uiLanguage: systemLocale(),
   language: 'german',
   intervalMinutes: 60,
   staleDays: 14,
@@ -61,7 +67,13 @@ class AppState {
   async init() {
     this.repo = await openRepo();
     const raw = await this.repo.getMeta('settings');
-    if (raw) this.settings = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    if (raw) {
+      const saved = JSON.parse(raw) as Partial<Settings>;
+      // Settings from before the language switch: keep the app in the language the achievements are in.
+      const uiLanguage = saved.uiLanguage ?? (saved.language === 'english' ? 'en' : 'de');
+      this.settings = { ...DEFAULT_SETTINGS, ...saved, uiLanguage };
+    }
+    this.applyLocale();
     this.games = await this.repo.getGames();
     const last = await this.repo.getMeta('lastSync');
     this.lastSync = last ? Number(last) : null;
@@ -116,7 +128,14 @@ class AppState {
 
   async saveSettings(s: Settings) {
     this.settings = s;
+    this.applyLocale();
     await this.repo.setMeta('settings', JSON.stringify(s));
+  }
+
+  /** Switches the UI language right away, for the window and the tray menu. */
+  private applyLocale() {
+    setLocale(this.settings.uiLanguage);
+    void setTrayLabels(t('tray.open'), t('tray.quit')).catch(() => {});
   }
 
   private async start(apiKey: string) {
@@ -139,7 +158,7 @@ class AppState {
       intervalMs: this.settings.intervalMinutes * 60_000,
       getRunningAppId: runningAppId,
       onRunningChange: (id) => (this.runningAppId = id),
-      onError: (e) => (this.error = (e as Error).message),
+      onError: (e) => (this.error = errorText(e)),
     });
     this.scheduler.start();
     void this.sync();
@@ -150,11 +169,11 @@ class AppState {
     this.error = null;
     try {
       const res = await this.engine.sync({ force });
-      if (res.aborted) this.error = res.aborted;
-      else if (res.errors.length) this.error = `${res.errors.length} Spiel(e) konnten nicht geladen werden — nächster Sync versucht es erneut.`;
+      if (res.aborted) this.error = res.abortedError ? errorText(res.abortedError) : res.aborted;
+      else if (res.errors.length) this.error = t('sync.failedGames', { n: res.errors.length });
       this.lastSync = Date.now();
     } catch (e) {
-      this.error = (e as Error).message;
+      this.error = errorText(e);
     }
     this.progress = null;
     this.games = await this.repo.getGames();
@@ -174,7 +193,7 @@ class AppState {
     this.recentUnlocks = [e, ...this.recentUnlocks].slice(0, 20);
     if (!this.settings.notifyUnlocks) return;
     const p = e.achievement.percent;
-    const rare = p != null && p < 10 ? ` — nur ${fmtPercent(p)} haben das!` : p != null ? ` (${fmtPercent(p)})` : '';
+    const rare = p != null && p < 10 ? t('notify.rare', { p: fmtPercent(p) }) : p != null ? ` (${fmtPercent(p)})` : '';
     void notify(`🏆 ${e.achievement.name}`, `${e.game.name}: ${e.game.unlocked}/${e.game.total}${rare}`);
   }
 
