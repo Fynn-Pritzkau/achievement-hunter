@@ -10,6 +10,10 @@ export interface FakeGame {
   achievements: Record<string, [boolean, number, number]>;
   /** Make GetSchemaForGame fail for this game. */
   schemaFails?: boolean;
+  /** Hidden achievements: GetSchemaForGame returns them without a description. */
+  hidden?: string[];
+  /** Make GetGameAchievements fail for this game. */
+  descriptionsFail?: boolean;
 }
 
 /** A tiny in-memory Steam Web API. Counts calls per endpoint. */
@@ -63,8 +67,21 @@ export class FakeSteam {
         game: {
           gameName: g.name,
           availableGameStats: {
-            achievements: names.map((n) => ({ name: n, displayName: n.toUpperCase(), description: `Do ${n}`, hidden: 0, icon: '', icongray: '' })),
+            achievements: names.map((n) => {
+              const hidden = !!g.hidden?.includes(n);
+              return { name: n, displayName: n.toUpperCase(), ...(hidden ? {} : { description: `Do ${n}` }), hidden: hidden ? 1 : 0, icon: '', icongray: '' };
+            }),
           },
+        },
+      });
+    }
+    if (path.includes('GetGameAchievements')) {
+      if (!g || g.descriptionsFail) return new Response('Internal Server Error', { status: 500 });
+      const names = Object.keys(g.achievements);
+      if (!names.length) return json({ response: {} });
+      return json({
+        response: {
+          achievements: names.map((n) => ({ internal_name: n, localized_name: n.toUpperCase(), localized_desc: `Do ${n}`, hidden: !!g.hidden?.includes(n) })),
         },
       });
     }

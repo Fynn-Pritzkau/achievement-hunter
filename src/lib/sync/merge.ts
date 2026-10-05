@@ -10,12 +10,15 @@ export function mergeSchema(existing: Achievement[], schema: SchemaAchievement[]
   const byName = new Map(existing.map((a) => [a.apiname, a]));
   return schema.map((s) => {
     const prev = byName.get(s.apiname);
-    const auto = autoTags(s);
+    // Hidden achievements can come without a description; keep one we found earlier.
+    const description = s.description || prev?.description || '';
+    const auto = autoTags({ name: s.name, description });
     // Manual tags are the ones the heuristic wouldn't produce; keep those, recompute the rest.
     const prevAuto = prev ? new Set<string>(autoTags(prev)) : new Set<string>();
     const manual = (prev?.tags ?? []).filter((t) => !prevAuto.has(t));
     return {
       ...s,
+      description,
       achieved: prev?.achieved ?? false,
       unlocktime: prev?.unlocktime ?? 0,
       percent: prev?.percent ?? null,

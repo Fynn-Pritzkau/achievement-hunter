@@ -172,6 +172,55 @@ export class SyncEngine {
     return this.opts.local ? this.opts.local.game(appid).catch(() => null) : null;
   }
 
+  /**
+   * GetSchemaForGame leaves out the descriptions of hidden achievements. Fills them in place
+   * from what we stored, Steam's cache, or one GetGameAchievements call (only if still missing).
+   * Returns true when something was filled.
+   */
+  private async fillDescriptions(
+    appid: number,
+    list: SchemaAchievement[],
+    local: LocalGame | null,
+    stored: Achievement[] = [],
+  ): Promise<boolean> {
+    const missing = () => list.filter((a) => a.hidden && !a.description);
+    if (!missing().length) return false;
+    const fill = (texts: Map<string, string>) => {
+      let n = 0;
+      for (const a of missing()) {
+        const d = texts.get(a.apiname);
+        if (!d) continue;
+        a.description = d;
+        n++;
+      }
+      return n;
+    };
+    let filled = fill(new Map(stored.filter((a) => a.description).map((a) => [a.apiname, a.description])));
+    if (local?.languageMatch) {
+      filled += fill(new Map(local.achievements.filter((a) => a.description).map((a) => [a.apiname, a.description])));
+    }
+    if (missing().length) {
+      try {
+        filled += fill(await this.opts.api.getDescriptions(appid));
+      } catch (e) {
+        // Descriptions are nice to have: only errors that stop the whole run count.
+        if (isFatal(e)) throw e;
+      }
+    }
+    return filled > 0;
+  }
+
+  /** Fills missing hidden descriptions of a stored game (data from before they were fetched). */
+  async fillHiddenDescriptions(appid: number): Promise<boolean> {
+    // Don't write while a sync might be saving the same game.
+    await Promise.all([this.running, this.localRunning]);
+    const { repo } = this.opts;
+    const list = await repo.getAchievements(appid);
+    if (!(await this.fillDescriptions(appid, list, await this.readLocal(appid)))) return false;
+    await repo.saveAchievements(appid, mergeSchema(list, list));
+    return true;
+  }
+
   private async runTasks(
     tasks: SyncTask[],
     known: Map<number, Game>,
@@ -261,6 +310,7 @@ export class SyncEngine {
     if (!schema && count != null && count !== list.length) {
       schema = localSchema ?? (await api.getSchema(task.appid));
     }
+    if (schema && schema !== localSchema) await this.fillDescriptions(task.appid, schema, local, list);
     const hasAchievements = schema ? schema.length > 0 : list.length > 0;
     const percents = task.global && hasAchievements ? await api.getGlobalPercentages(task.appid) : null;
 

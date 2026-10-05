@@ -31,6 +31,8 @@
   async function load(appid: number) {
     // Stored tags only change on a schema refresh; add the ones from newer rules right away.
     list = (await app.repo.getAchievements(appid)).map((a) => ({ ...a, tags: [...new Set([...a.tags, ...autoTags(a)])] }));
+    // Games synced before hidden descriptions were fetched get them now.
+    if (list.some((a) => a.hidden && !a.description) && (await app.fillHiddenDescriptions(appid))) await load(appid);
   }
   $effect(() => {
     // Reload when the game changes or the sync updated it.

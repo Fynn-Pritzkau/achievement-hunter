@@ -100,6 +100,43 @@ describe('SyncEngine', () => {
     expect(await repo.getGame(1)).toMatchObject({ total: 2, unlocked: 1, wasPerfect: true, status: 'playing' });
   });
 
+  it('fetches hidden descriptions with one extra call, and keeps them across refreshes', async () => {
+    const { steam, repo, engine } = setup();
+    const g = steam.add({ appid: 1, name: 'Alpha', playtime: 120, lastPlayed: RECENT, achievements: { a: [false, 0, 80], secret: [false, 0, 17] }, hidden: ['secret'] });
+    await engine.sync();
+    expect(steam.count('GetGameAchievements')).toBe(1);
+    expect((await repo.getAchievements(1)).find((a) => a.apiname === 'secret')).toMatchObject({ hidden: true, description: 'Do secret' });
+
+    // A refresh doesn't ask again, and a failing description call leaves what we have.
+    g.descriptionsFail = true;
+    steam.calls = [];
+    await engine.sync({ force: true });
+    expect(steam.count('GetGameAchievements')).toBe(0);
+    expect((await repo.getAchievements(1)).find((a) => a.apiname === 'secret')?.description).toBe('Do secret');
+  });
+
+  it('a failing description call never blocks the schema', async () => {
+    const { steam, repo, engine } = setup();
+    steam.add({ appid: 1, name: 'Alpha', playtime: 120, lastPlayed: RECENT, achievements: { secret: [false, 0, 17] }, hidden: ['secret'], descriptionsFail: true });
+    const res = await engine.sync();
+    expect(res.errors).toEqual([]);
+    expect((await repo.getGame(1))?.total).toBe(1);
+  });
+
+  it('fills hidden descriptions of games stored without them in one call', async () => {
+    const { steam, repo, engine } = setup();
+    steam.add({ appid: 1, name: 'Alpha', playtime: 120, lastPlayed: RECENT, achievements: { a: [false, 0, 80], secret: [false, 0, 17] }, hidden: ['secret'], descriptionsFail: true });
+    await engine.sync();
+    steam.games.get(1)!.descriptionsFail = false;
+    steam.calls = [];
+    expect(await engine.fillHiddenDescriptions(1)).toBe(true);
+    expect(steam.calls).toHaveLength(1);
+    expect((await repo.getAchievements(1)).find((a) => a.apiname === 'secret')?.description).toBe('Do secret');
+    // Nothing missing any more: free.
+    expect(await engine.fillHiddenDescriptions(1)).toBe(false);
+    expect(steam.calls).toHaveLength(1);
+  });
+
   it('stops on a private profile', async () => {
     const { steam, engine } = setup();
     steam.add({ appid: 1, name: 'A', playtime: 1, lastPlayed: RECENT, achievements: { a: [false, 0, 1] } });
