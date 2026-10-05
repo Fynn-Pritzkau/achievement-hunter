@@ -25,6 +25,7 @@ The first sync loads your library. It can take a minute for big libraries.
 - **Status per game** (next, playing, paused, completed, dropped). It is set automatically and can be overridden.
 - **Game page:** filter by open, done or focus. Auto-tags (online, co-op, difficulty, collectibles, grind, time limit), personal notes, a focus list, excluding broken achievements from your completion, hidden-achievement spoiler protection, and quick links to guides
 - **Live unlock notifications** while you play, with how rare the achievement is
+- **In-game overlay** toggled with `Ctrl+Shift+A` (configurable): a small click-through card with your progress, pinned achievements and the easiest ones still open. Counters like "37/50 collectibles" show as progress bars, and when one goes up, a short popup shows it, even with the overlay closed. Counters that climb nonstop (clicks, steps) only pop up now and then. It's a plain always-on-top window, so it shows over windowed and borderless games but not over exclusive fullscreen.
 - **Quick search** with `Ctrl+K`
 - Runs quietly in the **system tray**
 

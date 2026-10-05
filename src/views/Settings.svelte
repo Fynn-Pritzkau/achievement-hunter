@@ -1,14 +1,22 @@
 <script lang="ts">
   import { app } from '../lib/app.svelte';
-  import { LOCALES, t } from '../lib/i18n.svelte';
+  import { LOCALES, t, type MessageKey } from '../lib/i18n.svelte';
+  import { MAX_SUGGESTIONS, OVERLAY_CORNERS } from '../lib/overlay';
+  import { isTauri } from '../lib/platform';
 
   let { onClose }: { onClose: () => void } = $props();
 
-  let s = $state({ ...app.settings });
+  let s = $state({ ...app.settings, overlay: { ...app.settings.overlay } });
 
   async function save() {
-    await app.saveSettings({ ...s, intervalMinutes: Math.max(15, Number(s.intervalMinutes) || 60) });
-    onClose();
+    const suggestions = Math.max(0, Math.min(MAX_SUGGESTIONS, Math.round(Number(s.overlay.suggestions) || 0)));
+    await app.saveSettings({
+      ...s,
+      intervalMinutes: Math.max(15, Number(s.intervalMinutes) || 60),
+      overlay: { ...s.overlay, hotkey: s.overlay.hotkey.trim(), suggestions },
+    });
+    // Stay open when the hotkey didn't work, so the message is seen.
+    if (!app.overlayError) onClose();
   }
 </script>
 
@@ -34,6 +42,33 @@
     </label>
     <label class="check"><input type="checkbox" bind:checked={s.notifyUnlocks} /> {t('settings.notify')}</label>
     <label class="check"><input type="checkbox" bind:checked={s.revealHidden} /> {t('settings.revealHidden')}</label>
+    {#if isTauri}
+      <fieldset>
+        <legend>{t('settings.overlay')}</legend>
+        <div class="pair">
+          <label>
+            {t('settings.overlayHotkey')}
+            <input bind:value={s.overlay.hotkey} placeholder="Ctrl+Shift+A" spellcheck="false" />
+          </label>
+          <label>
+            {t('settings.overlayCorner')}
+            <select bind:value={s.overlay.corner}>
+              {#each OVERLAY_CORNERS as c}<option value={c}>{t(`settings.overlayCorner.${c}` as MessageKey)}</option>{/each}
+            </select>
+          </label>
+        </div>
+        <span class="small muted">{t('settings.overlayHotkeyHint')}</span>
+        {#if app.overlayError}<span class="small error">{t('settings.overlayError', { e: app.overlayError })}</span>{/if}
+        <label class="check"><input type="checkbox" bind:checked={s.overlay.showProgress} /> {t('settings.overlayProgress')}</label>
+        <label class="check"><input type="checkbox" bind:checked={s.overlay.showPinned} /> {t('settings.overlayPinned')}</label>
+        <label>
+          {t('settings.overlaySuggestions', { n: MAX_SUGGESTIONS })}
+          <input type="number" min="0" max={MAX_SUGGESTIONS} bind:value={s.overlay.suggestions} />
+        </label>
+        <label class="check"><input type="checkbox" bind:checked={s.overlay.progressPopup} /> {t('settings.overlayProgressPopup')}</label>
+        <span class="small muted">{t('settings.overlayProgressPopupHint')}</span>
+      </fieldset>
+    {/if}
     <div class="row">
       <button class="ghost" onclick={() => app.sync(true)} title={t('settings.reloadAllHint')}>{t('settings.reloadAll')}</button>
       <span></span>
@@ -61,10 +96,13 @@
 
 <style>
   .backdrop { position: fixed; inset: 0; background: rgb(0 0 0 / 0.35); display: grid; place-items: center; z-index: 10; padding: 16px; }
-  .box { width: min(460px, 100%); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; display: grid; gap: 14px; }
+  .box { width: min(460px, 100%); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; display: grid; gap: 14px; max-height: 100%; overflow-y: auto; }
   h2 { margin: 0; font-size: 18px; }
   label { display: grid; gap: 4px; }
   label.check { display: flex; gap: 8px; align-items: center; }
+  fieldset { border: 1px solid var(--border); border-radius: var(--radius); margin: 0; padding: 10px 12px 12px; display: grid; gap: 10px; }
+  legend { padding: 0 4px; font-weight: 600; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .row { display: flex; gap: 6px; }
   .row span { flex: 1; }
   p { margin: 0; }

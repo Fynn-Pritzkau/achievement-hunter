@@ -3,6 +3,7 @@
  * (`npm run dev` without Tauri, handy for working on the UI).
  */
 import { MemoryRepo, type Repo } from './db/repo';
+import type { OverlayCorner, OverlayData } from './overlay';
 import type { FetchFn } from './steam/api';
 import { tauriLocalSteam, type LocalSteam } from './steam/local';
 
@@ -57,6 +58,44 @@ export async function setTrayLabels(open: string, quit: string): Promise<void> {
   if (!isTauri) return;
   const { invoke } = await import('@tauri-apps/api/core');
   await invoke('set_tray_labels', { open, quit });
+}
+
+/** Binds the global overlay hotkey (empty = off). Rejects with a message when the shortcut is invalid or taken. */
+export async function setOverlayHotkey(hotkey: string, corner: OverlayCorner): Promise<void> {
+  if (!isTauri) return;
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('set_overlay_hotkey', { hotkey: hotkey.trim() || null, corner });
+}
+
+/**
+ * The overlay announces itself when it is ready for data; Rust reports when it was closed,
+ * and when the hotkey turned a progress popup into the full overlay.
+ */
+export async function onOverlayEvents(on: { ready: () => void; closed: () => void; full: () => void }): Promise<void> {
+  if (!isTauri) return;
+  const { listen } = await import('@tauri-apps/api/event');
+  await listen('overlay:ready', on.ready);
+  await listen('overlay:closed', on.closed);
+  await listen('overlay:full', on.full);
+}
+
+/** Opens the overlay as a short popup. False when it is already open. */
+export async function openOverlayToast(): Promise<boolean> {
+  if (!isTauri) return false;
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<boolean>('open_overlay_toast');
+}
+
+export async function closeOverlayToast(): Promise<void> {
+  if (!isTauri) return;
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('close_overlay_toast');
+}
+
+export async function sendOverlayData(data: OverlayData): Promise<void> {
+  if (!isTauri) return;
+  const { emitTo } = await import('@tauri-apps/api/event');
+  await emitTo('overlay', 'overlay:data', data);
 }
 
 /** Steam's local cache (read-only). null in the browser, where there is no file access. */

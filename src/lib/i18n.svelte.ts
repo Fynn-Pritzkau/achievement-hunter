@@ -41,6 +41,20 @@ const de = {
   'settings.updFailed': 'Update-Prüfung fehlgeschlagen',
   'settings.installNow': 'Jetzt installieren',
   'settings.checkUpdates': 'Nach Updates suchen',
+  'settings.overlay': 'Overlay im Spiel',
+  'settings.overlayHotkey': 'Tastenkürzel',
+  'settings.overlayHotkeyHint': 'Blendet das Overlay über dem laufenden Spiel ein und aus, z. B. Ctrl+Shift+A. Leer = aus. Funktioniert im Fenster- und randlosen Modus, nicht im exklusiven Vollbild.',
+  'settings.overlayCorner': 'Position',
+  'settings.overlayCorner.tl': 'Oben links',
+  'settings.overlayCorner.tr': 'Oben rechts',
+  'settings.overlayCorner.bl': 'Unten links',
+  'settings.overlayCorner.br': 'Unten rechts',
+  'settings.overlayProgress': 'Fortschritt anzeigen',
+  'settings.overlayPinned': 'Angepinnte Achievements anzeigen',
+  'settings.overlaySuggestions': 'Leichteste offene Achievements (0–{n})',
+  'settings.overlayError': 'Tastenkürzel nicht möglich: {e}',
+  'settings.overlayProgressPopup': 'Kurz einblenden, wenn ein Zähler steigt (z. B. 37/50 Sammelobjekte)',
+  'settings.overlayProgressPopupHint': 'Steam speichert solche Zähler erst, wenn das Spiel es tut, daher kann es etwas dauern. Zähler, die ständig steigen (Klicks, Schritte), melden sich höchstens 50-mal bis zum Ziel.',
 
   'sidebar.search': 'Suchen …',
   'sidebar.perfect': 'Perfect',
@@ -293,6 +307,12 @@ const de = {
 
   'tray.open': 'Öffnen',
   'tray.quit': 'Beenden',
+
+  'overlay.noGame': 'Gerade läuft kein Spiel mit Achievements.',
+  'overlay.progress': 'Fortschritt',
+  'overlay.pinned': 'Angepinnt',
+  'overlay.next': 'Als Nächstes',
+  'overlay.perfect': 'Alles freigeschaltet 🏆',
 };
 
 export type MessageKey = keyof typeof de;
@@ -330,6 +350,20 @@ const en: Record<MessageKey, string> = {
   'settings.updFailed': 'Update check failed',
   'settings.installNow': 'Install now',
   'settings.checkUpdates': 'Check for updates',
+  'settings.overlay': 'In-game overlay',
+  'settings.overlayHotkey': 'Hotkey',
+  'settings.overlayHotkeyHint': 'Shows and hides the overlay on top of the running game, e.g. Ctrl+Shift+A. Empty = off. Works in windowed and borderless mode, not in exclusive fullscreen.',
+  'settings.overlayCorner': 'Position',
+  'settings.overlayCorner.tl': 'Top left',
+  'settings.overlayCorner.tr': 'Top right',
+  'settings.overlayCorner.bl': 'Bottom left',
+  'settings.overlayCorner.br': 'Bottom right',
+  'settings.overlayProgress': 'Show progress',
+  'settings.overlayPinned': 'Show pinned achievements',
+  'settings.overlaySuggestions': 'Easiest open achievements (0–{n})',
+  'settings.overlayError': 'Can’t use this hotkey: {e}',
+  'settings.overlayProgressPopup': 'Pop up briefly when a counter goes up (e.g. 37/50 collectibles)',
+  'settings.overlayProgressPopupHint': 'Steam only stores these counters when the game does, so it can take a moment. Counters that climb nonstop (clicks, steps) pop up at most 50 times on the way to the goal.',
 
   'sidebar.search': 'Search …',
   'sidebar.perfect': 'Perfect',
@@ -582,6 +616,12 @@ const en: Record<MessageKey, string> = {
 
   'tray.open': 'Open',
   'tray.quit': 'Quit',
+
+  'overlay.noGame': 'No game with achievements is running.',
+  'overlay.progress': 'Progress',
+  'overlay.pinned': 'Pinned',
+  'overlay.next': 'Up next',
+  'overlay.perfect': 'All unlocked 🏆',
 };
 
 const MESSAGES: Record<Locale, Record<MessageKey, string>> = { de, en };

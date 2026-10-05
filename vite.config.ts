@@ -6,6 +6,12 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 export default defineConfig({
   plugins: [svelte()],
   clearScreen: false,
+  // The in-game overlay is its own small page, so it doesn't load the whole app.
+  build: {
+    rollupOptions: {
+      input: { main: 'index.html', overlay: 'overlay.html' },
+    },
+  },
   server: {
     port: 1420,
     strictPort: true,

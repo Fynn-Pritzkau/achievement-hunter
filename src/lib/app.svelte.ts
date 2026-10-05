@@ -4,14 +4,20 @@ import {
   checkForUpdate,
   loadApiKey,
   notify,
+  onOverlayEvents,
   openLocalSteam,
   openRepo,
   runningAppIds,
   saveApiKey,
+  closeOverlayToast,
+  openOverlayToast,
+  sendOverlayData,
+  setOverlayHotkey,
   setTrayLabels,
   steamTransport,
   type AppUpdate,
 } from './platform';
+import { BUNDLE_MS, buildOverlayData, DEFAULT_OVERLAY, ProgressTracker, type OverlaySettings } from './overlay';
 import { SteamApi } from './steam/api';
 import type { LocalSteam, StatProgress } from './steam/local';
 import { SyncEngine, type SyncProgress, type UnlockEvent } from './sync/engine';
@@ -33,6 +39,7 @@ export interface Settings {
   /** Show descriptions of hidden achievements without clicking. */
   revealHidden: boolean;
   notifyUnlocks: boolean;
+  overlay: OverlaySettings;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -43,6 +50,7 @@ const DEFAULT_SETTINGS: Settings = {
   staleDays: 14,
   revealHidden: false,
   notifyUnlocks: true,
+  overlay: DEFAULT_OVERLAY,
 };
 
 /** App-wide reactive state. */
@@ -64,8 +72,18 @@ class AppState {
   updateState = $state<'idle' | 'checking' | 'current' | 'installing' | 'error'>('idle');
   updateProgress = $state<number | null>(null);
   updateError = $state<string | null>(null);
+  /** Why the overlay hotkey could not be bound (invalid or taken by another app). */
+  overlayError = $state<string | null>(null);
 
   repo!: Repo;
+  /** Only while the overlay window exists does the main window send it updates. */
+  private overlayOpen = false;
+  /** The overlay window is the short progress popup. */
+  private overlayToast = false;
+  private toastTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Game of the latest popup; the overlay prefers it when several games run. */
+  private overlayAppId: number | null = null;
+  private tracker = new ProgressTracker();
   private engine: SyncEngine | null = null;
   private local: LocalSteam | null = null;
   private scheduler: Scheduler | null = null;
@@ -78,9 +96,25 @@ class AppState {
       const saved = JSON.parse(raw) as Partial<Settings>;
       // Settings from before the language switch: keep the app in the language the achievements are in.
       const uiLanguage = saved.uiLanguage ?? (saved.language === 'english' ? 'en' : 'de');
-      this.settings = { ...DEFAULT_SETTINGS, ...saved, uiLanguage };
+      this.settings = { ...DEFAULT_SETTINGS, ...saved, uiLanguage, overlay: { ...DEFAULT_OVERLAY, ...saved.overlay } };
     }
     this.applyLocale();
+    await onOverlayEvents({
+      ready: () => {
+        this.overlayOpen = true;
+        void this.pushOverlay();
+      },
+      closed: () => {
+        this.overlayOpen = this.overlayToast = false;
+        this.clearToastTimer();
+      },
+      full: () => {
+        this.overlayToast = false;
+        this.clearToastTimer();
+        void this.pushOverlay();
+      },
+    });
+    await this.applyOverlayHotkey();
     this.games = await this.repo.getGames();
     const last = await this.repo.getMeta('lastSync');
     this.lastSync = last ? Number(last) : null;
@@ -138,6 +172,71 @@ class AppState {
     this.settings = s;
     this.applyLocale();
     await this.repo.setMeta('settings', JSON.stringify(s));
+    await this.applyOverlayHotkey();
+    if (this.overlayOpen) void this.pushOverlay();
+  }
+
+  private async applyOverlayHotkey() {
+    try {
+      await setOverlayHotkey(this.settings.overlay.hotkey, this.settings.overlay.corner);
+      this.overlayError = null;
+    } catch (e) {
+      this.overlayError = errorText(e);
+    }
+  }
+
+  /** Sends the running game to the overlay: from SQLite and Steam's cache, no API call. */
+  private async pushOverlay() {
+    const running = this.runningAppIds
+      .map((id) => this.games.find((g) => g.appid === id))
+      .filter((g): g is Game => !!g && (g.total ?? 0) > 0);
+    const game = running.find((g) => g.appid === this.overlayAppId) ?? running[0] ?? null;
+    const list = game ? await this.repo.getAchievements(game.appid) : [];
+    const progress = game ? await this.localProgress(game.appid) : new Map();
+    const { overlay, uiLanguage, revealHidden } = this.settings;
+    const data = buildOverlayData(game, list, overlay, {
+      locale: uiLanguage,
+      revealHidden,
+      mode: this.overlayToast ? 'toast' : 'full',
+      progress,
+      bumps: game ? this.tracker.recent(game.appid) : [],
+    });
+    await sendOverlayData(data).catch(() => {});
+  }
+
+  /** A running game was synced: look for counters that went up and show them. */
+  private async onRunningGameUpdated(appid: number) {
+    const bumps = this.local ? this.tracker.update(appid, await this.localProgress(appid), Date.now()) : [];
+    const fullOpen = this.overlayOpen && !this.overlayToast;
+    if (bumps.some((b) => b.notable) && this.settings.overlay.progressPopup && !fullOpen) {
+      this.overlayAppId = appid;
+      await this.showProgressToast();
+    } else if (this.overlayOpen) {
+      if (bumps.length) this.overlayAppId = appid;
+      await this.pushOverlay();
+    }
+  }
+
+  /** Pops the overlay up briefly; further bumps keep it open and update it (bundled, BUNDLE_MS). */
+  private async showProgressToast() {
+    if (!this.overlayOpen && !this.overlayToast) {
+      this.overlayToast = true;
+      // False when the full overlay is just loading; it then gets the update on its own.
+      if (!(await openOverlayToast().catch(() => false))) this.overlayToast = false;
+    }
+    // A window that is still loading asks for its data with overlay:ready.
+    if (this.overlayOpen) await this.pushOverlay();
+    if (!this.overlayToast) return;
+    this.clearToastTimer();
+    this.toastTimer = setTimeout(() => {
+      this.toastTimer = null;
+      if (this.overlayToast) void closeOverlayToast().catch(() => {});
+    }, BUNDLE_MS);
+  }
+
+  private clearToastTimer() {
+    if (this.toastTimer) clearTimeout(this.toastTimer);
+    this.toastTimer = null;
   }
 
   /** Switches the UI language right away, for the window and the tray menu. */
@@ -166,7 +265,14 @@ class AppState {
       engine: this.engine,
       intervalMs: this.settings.intervalMinutes * 60_000,
       getRunningAppIds: runningAppIds,
-      onRunningChange: (ids) => (this.runningAppIds = ids),
+      onRunningChange: (ids) => {
+        const started = ids.filter((id) => !this.runningAppIds.includes(id));
+        for (const id of this.runningAppIds) if (!ids.includes(id)) this.tracker.forget(id);
+        this.runningAppIds = ids;
+        // Baseline for started games, so their first counter step counts.
+        for (const id of started) void this.localProgress(id).then((p) => this.tracker.update(id, p, Date.now()));
+        if (this.overlayOpen) void this.pushOverlay();
+      },
       onError: (e) => (this.error = errorText(e)),
     });
     this.scheduler.start();
@@ -213,6 +319,7 @@ class AppState {
     if (i >= 0) this.games[i] = g;
     else this.games.push(g);
     this.scheduleAppAchCheck();
+    if (this.runningAppIds.includes(g.appid)) void this.onRunningGameUpdated(g.appid);
   }
 
   private async loadAppAchievements() {

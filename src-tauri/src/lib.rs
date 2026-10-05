@@ -1,8 +1,10 @@
+use std::sync::Mutex;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, State, WindowEvent, Wry,
+    AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindowBuilder, WindowEvent, Wry,
 };
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 mod steam_local;
 
@@ -82,6 +84,112 @@ fn show_main(app: &AppHandle) {
     }
 }
 
+const OVERLAY: &str = "overlay";
+/// Logical size of the overlay window; the card inside sticks to the chosen corner, the rest stays transparent.
+const OVERLAY_SIZE: (f64, f64) = (360.0, 520.0);
+const OVERLAY_MARGIN: f64 = 16.0;
+
+struct OverlayState {
+    /// Screen corner: "tl", "tr", "bl" or "br".
+    corner: String,
+    /// The window is the short progress popup, not the overlay the user opened.
+    toast: bool,
+}
+
+struct Overlay(Mutex<OverlayState>);
+
+/// (Re)binds the global overlay hotkey. None or empty unbinds it.
+#[tauri::command]
+fn set_overlay_hotkey(
+    app: AppHandle,
+    state: State<'_, Overlay>,
+    hotkey: Option<String>,
+    corner: String,
+) -> Result<(), String> {
+    state.0.lock().unwrap().corner = corner;
+    let shortcuts = app.global_shortcut();
+    shortcuts.unregister_all().map_err(|e| e.to_string())?;
+    match hotkey.as_deref().map(str::trim) {
+        Some(h) if !h.is_empty() => shortcuts.register(h).map_err(|e| e.to_string()),
+        _ => Ok(()),
+    }
+}
+
+/// Opens the overlay as a short popup. False when it is already open (then the UI just updates it).
+#[tauri::command]
+fn open_overlay_toast(app: AppHandle, state: State<'_, Overlay>) -> Result<bool, String> {
+    if app.get_webview_window(OVERLAY).is_some() {
+        return Ok(false);
+    }
+    state.0.lock().unwrap().toast = true;
+    open_overlay(&app).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+/// Closes the popup, unless the user turned it into the full overlay with the hotkey meanwhile.
+#[tauri::command]
+fn close_overlay_toast(app: AppHandle, state: State<'_, Overlay>) {
+    if state.0.lock().unwrap().toast {
+        if let Some(w) = app.get_webview_window(OVERLAY) {
+            let _ = w.destroy();
+        }
+    }
+}
+
+/// The overlay only exists while it is visible, so a closed overlay costs no memory.
+fn toggle_overlay(app: &AppHandle) {
+    let state = app.state::<Overlay>();
+    let was_toast = std::mem::replace(&mut state.0.lock().unwrap().toast, false);
+    if let Some(w) = app.get_webview_window(OVERLAY) {
+        if was_toast {
+            // The hotkey during a popup keeps it open as the full overlay.
+            let _ = app.emit_to("main", "overlay:full", ());
+        } else {
+            let _ = w.destroy();
+        }
+    } else if let Err(e) = open_overlay(app) {
+        eprintln!("overlay: {e}");
+    }
+}
+
+/// A transparent, click-through window on top of the game. A plain window, nothing injected,
+/// so it shows over windowed and borderless games but not over exclusive fullscreen.
+fn open_overlay(app: &AppHandle) -> tauri::Result<()> {
+    let corner = app.state::<Overlay>().0.lock().unwrap().corner.clone();
+    let w = WebviewWindowBuilder::new(app, OVERLAY, WebviewUrl::App("overlay.html".into()))
+        .title("Achievement Hunter Overlay")
+        .inner_size(OVERLAY_SIZE.0, OVERLAY_SIZE.1)
+        .decorations(false)
+        .transparent(true)
+        .shadow(false)
+        .resizable(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .focusable(false)
+        .focused(false)
+        .visible(false)
+        .build()?;
+    // The monitor the game is on is usually the one under the cursor.
+    let monitor = app
+        .cursor_position()
+        .ok()
+        .and_then(|p| app.monitor_from_point(p.x, p.y).ok().flatten())
+        .or_else(|| app.primary_monitor().ok().flatten());
+    if let Some(m) = monitor {
+        let area = m.work_area();
+        let scale = m.scale_factor();
+        let (w_px, h_px) = (OVERLAY_SIZE.0 * scale, OVERLAY_SIZE.1 * scale);
+        let margin = OVERLAY_MARGIN * scale;
+        let (ax, ay) = (area.position.x as f64, area.position.y as f64);
+        let (aw, ah) = (area.size.width as f64, area.size.height as f64);
+        let x = if corner.ends_with('l') { ax + margin } else { ax + aw - w_px - margin };
+        let y = if corner.starts_with('b') { ay + ah - h_px - margin } else { ay + margin };
+        w.set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32))?;
+    }
+    w.set_ignore_cursor_events(true)?;
+    w.show()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -92,11 +200,24 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    if event.state() == ShortcutState::Pressed {
+                        toggle_overlay(app);
+                    }
+                })
+                .build(),
+        )
+        .manage(Overlay(Mutex::new(OverlayState { corner: "tr".into(), toast: false })))
         .invoke_handler(tauri::generate_handler![
             get_secret,
             set_secret,
             running_app_ids,
             set_tray_labels,
+            set_overlay_hotkey,
+            open_overlay_toast,
+            close_overlay_toast,
             steam_local::local_achievements,
             steam_local::local_playtimes,
             steam_local::local_stats_changed
@@ -129,12 +250,18 @@ pub fn run() {
             app.manage(TrayItems { open, quit });
             Ok(())
         })
-        // Closing the window keeps the app in the tray so syncing and live tracking continue.
-        .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
+        .on_window_event(|window, event| match event {
+            // Closing the main window keeps the app in the tray so syncing and live tracking continue.
+            WindowEvent::CloseRequested { api, .. } if window.label() == "main" => {
                 api.prevent_close();
                 let _ = window.hide();
             }
+            // Tells the main window to stop sending overlay updates.
+            WindowEvent::Destroyed if window.label() == OVERLAY => {
+                window.app_handle().state::<Overlay>().0.lock().unwrap().toast = false;
+                let _ = window.app_handle().emit_to("main", "overlay:closed", ());
+            }
+            _ => {}
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
