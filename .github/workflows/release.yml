@@ -1,0 +1,74 @@
+# Builds, signs and publishes a release whenever a version tag (v1.2.3) is pushed.
+# `npm run release` creates that tag. Installed apps pick the update up from latest.json.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+      - run: npm test
+
+      # Releases go to this repo, or to the public repo in the RELEASE_REPO variable
+      # (owner/name) when the code itself stays private.
+      - name: Release target and notes
+        id: target
+        shell: bash
+        env:
+          RELEASE_REPO: ${{ vars.RELEASE_REPO }}
+        run: |
+          target="${RELEASE_REPO:-$GITHUB_REPOSITORY}"
+          echo "owner=${target%%/*}" >> "$GITHUB_OUTPUT"
+          echo "repo=${target#*/}" >> "$GITHUB_OUTPUT"
+          node -e "
+            const fs = require('fs');
+            const p = 'src-tauri/tauri.conf.json';
+            const c = JSON.parse(fs.readFileSync(p, 'utf8'));
+            c.plugins.updater.endpoints = ['https://github.com/$target/releases/latest/download/latest.json'];
+            fs.writeFileSync(p, JSON.stringify(c, null, 2));
+          "
+          # Notes come from the annotated tag that `npm run release` wrote.
+          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          {
+            echo "notes<<__NOTES__"
+            git tag -l --format='%(contents)' "$GITHUB_REF_NAME"
+            echo "__NOTES__"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          # A token with access to RELEASE_REPO when publishing elsewhere; this repo's token otherwise.
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          owner: ${{ steps.target.outputs.owner }}
+          repo: ${{ steps.target.outputs.repo }}
+          tagName: ${{ github.ref_name }}
+          releaseName: Achievement Hunter ${{ github.ref_name }}
+          releaseBody: ${{ steps.target.outputs.notes }}
+          releaseDraft: false
+          prerelease: false
+          updaterJsonPreferNsis: true
