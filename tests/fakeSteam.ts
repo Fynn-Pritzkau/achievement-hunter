@@ -35,12 +35,12 @@ export class FakeSteam {
   fetch = async (url: string): Promise<Response> => {
     const u = new URL(url);
     const path = u.pathname;
-    this.calls.push(path);
+    const appid = Number(u.searchParams.get('appid') ?? u.searchParams.get('gameid'));
+    this.calls.push(appid ? `${path}?appid=${appid}` : path);
     if (this.rateLimitNext > 0) {
       this.rateLimitNext--;
       return new Response('Too Many Requests', { status: 429 });
     }
-    const appid = Number(u.searchParams.get('appid') ?? u.searchParams.get('gameid'));
     const g = this.games.get(appid);
     const json = (body: unknown, status = 200) =>
       new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });

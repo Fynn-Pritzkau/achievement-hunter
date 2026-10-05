@@ -21,7 +21,7 @@
 
   const list = $derived(SMART_LISTS.find((l) => l.id === listId) ?? SMART_LISTS[1]);
   const sort = $derived(sortOverride ?? list.sort);
-  const ctx = $derived({ runningAppId: app.runningAppId, now: Math.floor(Date.now() / 1000) });
+  const ctx = $derived({ runningAppIds: app.runningAppIds, now: Math.floor(Date.now() / 1000) });
   const games = $derived(
     sortGames(
       app.games.filter((g) => list.filter(g, ctx) && matchesQuery(g, query)),
@@ -62,7 +62,7 @@
             <div class="title">
               {#if g.pinned}<span title={t('library.pinned')}>📌</span>{/if}
               <span class="name">{g.name}</span>
-              {#if g.appid === app.runningAppId}<span class="chip accent">{t('library.running')}</span>{/if}
+              {#if app.runningAppIds.includes(g.appid)}<span class="chip accent">{t('library.running')}</span>{/if}
               {#if g.wasPerfect && !isPerfect(g)}<span class="chip warn" title={t('library.lostHint')}>{t('list.lost')}</span>{/if}
             </div>
             {#if g.total}

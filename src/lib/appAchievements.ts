@@ -64,7 +64,7 @@ export function libraryStats(games: Game[], nowUnix: number): LibraryStats {
   const withAch = games.filter((g) => g.total);
   const perfects = games.filter((g) => isPerfect(g));
   const started = withAch.filter((g) => g.unlocked > 0);
-  const ctx = { runningAppId: null, now: nowUnix };
+  const ctx = { runningAppIds: [], now: nowUnix };
   const inList = (id: string) => {
     const list = SMART_LISTS.find((l) => l.id === id)!;
     return games.filter((g) => list.filter(g, ctx)).length;

@@ -4,12 +4,13 @@ export interface SchedulerOptions {
   engine: SyncEngine;
   /** Library sync interval. */
   intervalMs: number;
-  /** How often to check which game is running (free, local). */
+  /** How often to check which games are running (free, local). */
   runningPollMs?: number;
-  /** How often to refresh the running game's achievements (1 API call each). Unused when the engine reads Steam's local cache. */
+  /** How often to refresh each running game's achievements (1 API call each). Unused when the engine reads Steam's local cache. */
   liveIntervalMs?: number;
-  getRunningAppId: () => Promise<number | null>;
-  onRunningChange?: (appid: number | null) => void;
+  /** All games Steam runs right now; several when idling games side by side. */
+  getRunningAppIds: () => Promise<number[]>;
+  onRunningChange?: (appids: number[]) => void;
   onError?: (e: unknown) => void;
 }
 
@@ -17,13 +18,13 @@ export interface SchedulerOptions {
  * Keeps data fresh with as few calls as possible:
  * - a library sync every `intervalMs` (usually 1 call),
  * - with Steam's local cache: every tick, the games whose stats file Steam rewrote (free),
- * - without it, while a game runs: only that game, every `liveIntervalMs`,
- * - when the game closes: one last refresh of it.
+ * - without it, while games run: only those, each every `liveIntervalMs`,
+ * - when a game closes: one last refresh of it.
  */
 export class Scheduler {
   private timers: ReturnType<typeof setInterval>[] = [];
-  private running: number | null = null;
-  private lastLive = 0;
+  /** Running appid → time of its last live refresh (or of its start). */
+  private running = new Map<number, number>();
 
   constructor(private opts: SchedulerOptions) {}
 
@@ -40,8 +41,8 @@ export class Scheduler {
     this.timers = [];
   }
 
-  get runningAppId(): number | null {
-    return this.running;
+  get runningAppIds(): number[] {
+    return [...this.running.keys()];
   }
 
   async librarySync(force = false): Promise<void> {
@@ -55,27 +56,30 @@ export class Scheduler {
   /** Exposed for tests; normally driven by the timer. */
   async tick(now = Date.now()): Promise<void> {
     const { engine, liveIntervalMs = 150_000 } = this.opts;
-    let id: number | null;
+    let ids: number[];
     try {
-      id = await this.opts.getRunningAppId();
+      ids = await this.opts.getRunningAppIds();
     } catch {
       return;
     }
-    const prev = this.running;
-    if (id !== prev) {
-      this.running = id;
-      this.opts.onRunningChange?.(id);
-      this.lastLive = now;
-      // Game closed: Steam has the final state now — refresh it once.
-      if (prev) await this.safe(() => engine.syncGame(prev));
+    const current = new Set(ids);
+    const closed = [...this.running.keys()].filter((id) => !current.has(id));
+    const started = ids.filter((id) => !this.running.has(id));
+    if (closed.length || started.length) {
+      for (const id of closed) this.running.delete(id);
+      for (const id of started) this.running.set(id, now);
+      this.opts.onRunningChange?.(this.runningAppIds);
+      // Closed games: Steam has the final state now — refresh each once.
+      for (const id of closed) await this.safe(() => engine.syncGame(id));
       return;
     }
     if (engine.hasLocal) {
       await this.safe(() => engine.syncLocal());
       return;
     }
-    if (id && now - this.lastLive >= liveIntervalMs && !engine.busy) {
-      this.lastLive = now;
+    for (const [id, last] of this.running) {
+      if (now - last < liveIntervalMs || engine.busy) continue;
+      this.running.set(id, now);
       await this.safe(() => engine.syncGame(id));
     }
   }

@@ -6,7 +6,7 @@ import {
   notify,
   openLocalSteam,
   openRepo,
-  runningAppId,
+  runningAppIds,
   saveApiKey,
   setTrayLabels,
   steamTransport,
@@ -51,7 +51,7 @@ class AppState {
   settings = $state<Settings>({ ...DEFAULT_SETTINGS });
   games = $state<Game[]>([]);
   progress = $state<SyncProgress | null>(null);
-  runningAppId = $state<number | null>(null);
+  runningAppIds = $state<number[]>([]);
   lastSync = $state<number | null>(null);
   error = $state<string | null>(null);
   recentUnlocks = $state<UnlockEvent[]>([]);
@@ -161,8 +161,8 @@ class AppState {
     this.scheduler = new Scheduler({
       engine: this.engine,
       intervalMs: this.settings.intervalMinutes * 60_000,
-      getRunningAppId: runningAppId,
-      onRunningChange: (id) => (this.runningAppId = id),
+      getRunningAppIds: runningAppIds,
+      onRunningChange: (ids) => (this.runningAppIds = ids),
       onError: (e) => (this.error = errorText(e)),
     });
     this.scheduler.start();

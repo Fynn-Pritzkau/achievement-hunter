@@ -25,21 +25,40 @@ fn set_secret(name: String, value: String) -> Result<(), String> {
     entry.set_password(&value).map_err(|e| e.to_string())
 }
 
-/// AppID of the game the Steam client is running right now (0 = none).
-/// Steam keeps this in the registry, so checking it costs no API call.
+/// AppIDs of all games the Steam client is running right now (several when idling games side by side).
+/// Steam keeps a `Running` flag per app in the registry, so checking it costs no API call.
+/// `RunningAppID` only holds one game, so it is merely a fallback.
 #[tauri::command]
-fn running_app_id() -> u32 {
+fn running_app_ids() -> Vec<u32> {
     #[cfg(windows)]
     {
         use winreg::{enums::HKEY_CURRENT_USER, RegKey};
-        RegKey::predef(HKEY_CURRENT_USER)
-            .open_subkey(r"Software\Valve\Steam")
-            .and_then(|k| k.get_value::<u32, _>("RunningAppID"))
-            .unwrap_or(0)
+        let Ok(steam) = RegKey::predef(HKEY_CURRENT_USER).open_subkey(r"Software\Valve\Steam") else {
+            return Vec::new();
+        };
+        let mut ids: Vec<u32> = steam
+            .open_subkey("Apps")
+            .map(|apps| {
+                apps.enum_keys()
+                    .flatten()
+                    .filter_map(|name| {
+                        let running = apps.open_subkey(&name).ok()?.get_value::<u32, _>("Running").ok()?;
+                        (running != 0).then(|| name.parse().ok()).flatten()
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        if let Ok(id) = steam.get_value::<u32, _>("RunningAppID") {
+            if id != 0 && !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+        ids.sort_unstable();
+        ids
     }
     #[cfg(not(windows))]
     {
-        0
+        Vec::new()
     }
 }
 
@@ -76,7 +95,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_secret,
             set_secret,
-            running_app_id,
+            running_app_ids,
             set_tray_labels,
             steam_local::local_achievements,
             steam_local::local_playtimes,

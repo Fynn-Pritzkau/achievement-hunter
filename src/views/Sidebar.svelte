@@ -11,13 +11,13 @@
     onSearch,
   }: { listId: string; onSelect: () => void; onSettings: () => void; onSearch: () => void } = $props();
 
-  const ctx = $derived({ runningAppId: app.runningAppId, now: Math.floor(Date.now() / 1000) });
+  const ctx = $derived({ runningAppIds: app.runningAppIds, now: Math.floor(Date.now() / 1000) });
   const counts = $derived(
     Object.fromEntries(SMART_LISTS.map((l) => [l.id, app.games.filter((g) => l.filter(g, ctx)).length])),
   );
   const stats = $derived(totals(app.games));
   const appAchCount = $derived(Object.keys(app.appAchievements).length);
-  const running = $derived(app.games.find((g) => g.appid === app.runningAppId));
+  const running = $derived(app.games.filter((g) => app.runningAppIds.includes(g.appid)));
   /** Lists with entries ('all' always), grouped; empty sections disappear. */
   const sections = $derived(
     LIST_SECTIONS.map((s) => ({ ...s, lists: s.lists.filter((id) => counts[id] > 0 || id === 'all') })).filter((s) => s.lists.length),
@@ -58,13 +58,13 @@
 <aside>
   <button class="search" onclick={onSearch}><span>{t('sidebar.search')}</span><kbd>Ctrl K</kbd></button>
 
-  {#if running}
+  {#each running as g (g.appid)}
     <button class="live" onclick={() => select('running')}>
       <span class="dot"></span>
-      <span class="name">{running.name}</span>
-      <span class="small">{running.unlocked}/{running.total ?? '?'}</span>
+      <span class="name">{g.name}</span>
+      <span class="small">{g.unlocked}/{g.total ?? '?'}</span>
     </button>
-  {/if}
+  {/each}
 
   <nav>
     {#each sections as s (s.id)}

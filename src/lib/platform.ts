@@ -45,12 +45,11 @@ export async function saveApiKey(value: string): Promise<void> {
   localStorage.setItem(KEY_NAME, value);
 }
 
-/** AppID of the game Steam is running right now, read from the registry. Free — no API call. */
-export async function runningAppId(): Promise<number | null> {
-  if (!isTauri) return null;
+/** AppIDs of the games Steam is running right now, read from the registry. Free — no API call. */
+export async function runningAppIds(): Promise<number[]> {
+  if (!isTauri) return [];
   const { invoke } = await import('@tauri-apps/api/core');
-  const id = await invoke<number>('running_app_id');
-  return id > 0 ? id : null;
+  return invoke<number[]>('running_app_ids');
 }
 
 /** Texts of the tray menu, which Rust creates before the UI knows the language. */

@@ -114,17 +114,17 @@ describe('Steam local cache', () => {
     steam.add({ appid: 7, name: 'Live', playtime: 10, lastPlayed: RECENT, achievements: { a: [false, 0, 50] } });
     const g = local.set(7, { schemaMtime: RECENT, statsMtime: RECENT + 60, achievements: { a: [false, 0] } });
     await engine.sync();
-    let running: number | null = null;
-    const s = new Scheduler({ engine, intervalMs: 3_600_000, getRunningAppId: async () => running });
+    let running: number[] = [];
+    const s = new Scheduler({ engine, intervalMs: 3_600_000, getRunningAppIds: async () => running });
     steam.calls = [];
 
-    running = 7;
+    running = [7];
     await s.tick(0);
     for (let t = 15_000; t <= 600_000; t += 15_000) await s.tick(t);
     g.achievements.a = [true, SEC + 1];
     g.statsMtime = SEC + 1;
     await s.tick(615_000);
-    running = null;
+    running = [];
     await s.tick(630_000);
     expect(steam.calls).toHaveLength(0);
   });

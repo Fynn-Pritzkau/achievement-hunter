@@ -9,7 +9,7 @@ export interface SmartList {
 }
 
 export interface ListContext {
-  runningAppId: number | null;
+  runningAppIds: number[];
   /** Unix seconds. */
   now: number;
 }
@@ -18,7 +18,7 @@ const has = (g: Game) => !!g.total && !g.hidden;
 const pct = (g: Game) => completion(g) ?? 0;
 
 export const SMART_LISTS: SmartList[] = [
-  { id: 'running', filter: (g, c) => g.appid === c.runningAppId, sort: 'recent' },
+  { id: 'running', filter: (g, c) => c.runningAppIds.includes(g.appid), sort: 'recent' },
   { id: 'all', filter: (g) => has(g), sort: 'recent' },
   { id: 'almost', filter: (g) => has(g) && pct(g) >= 80 && !isPerfect(g), sort: 'remaining' },
   { id: 'easy', filter: (g) => has(g) && g.easyOpen > 0, sort: 'easy' },
