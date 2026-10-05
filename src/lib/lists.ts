@@ -31,6 +31,14 @@ export const SMART_LISTS: SmartList[] = [
   { id: 'hidden', filter: (g) => g.hidden, sort: 'name' },
 ];
 
+/** Sidebar grouping of the smart lists. Headers are the i18n keys `section.<id>`; `library` has none. */
+export const LIST_SECTIONS: { id: string; lists: string[]; collapsed?: boolean }[] = [
+  { id: 'library', lists: ['all', 'perfect'] },
+  { id: 'hunt', lists: ['almost', 'easy', 'rare'] },
+  { id: 'revisit', lists: ['started', 'lost', 'unplayed'] },
+  { id: 'more', lists: ['none', 'hidden'], collapsed: true },
+];
+
 export type SortKey = 'recent' | 'recentUnlock' | 'completion' | 'remaining' | 'effort' | 'easy' | 'rarest' | 'rarity' | 'playtime' | 'name';
 
 /** Labels are the i18n keys `sort.<key>`. */

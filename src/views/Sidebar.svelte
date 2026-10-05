@@ -1,7 +1,7 @@
 <script lang="ts">
   import { app } from '../lib/app.svelte';
   import { t, type MessageKey } from '../lib/i18n.svelte';
-  import { SMART_LISTS, totals } from '../lib/lists';
+  import { LIST_SECTIONS, SMART_LISTS, totals } from '../lib/lists';
   import { APP_ACHIEVEMENTS } from '../lib/appAchievements';
 
   let {
@@ -18,6 +18,35 @@
   const stats = $derived(totals(app.games));
   const appAchCount = $derived(Object.keys(app.appAchievements).length);
   const running = $derived(app.games.find((g) => g.appid === app.runningAppId));
+  /** Lists with entries ('all' always), grouped; empty sections disappear. */
+  const sections = $derived(
+    LIST_SECTIONS.map((s) => ({ ...s, lists: s.lists.filter((id) => counts[id] > 0 || id === 'all') })).filter((s) => s.lists.length),
+  );
+
+  // Collapsed sections are a per-machine view preference, so localStorage is enough.
+  const COLLAPSED_KEY = 'sidebar.collapsed';
+  let collapsed = $state<Record<string, boolean>>(loadCollapsed());
+
+  function loadCollapsed(): Record<string, boolean> {
+    const defaults = Object.fromEntries(LIST_SECTIONS.map((s) => [s.id, !!s.collapsed]));
+    try {
+      return { ...defaults, ...JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? '{}') };
+    } catch {
+      return defaults;
+    }
+  }
+
+  function toggle(id: string) {
+    collapsed[id] = !collapsed[id];
+    try {
+      localStorage.setItem(COLLAPSED_KEY, JSON.stringify(collapsed));
+    } catch {}
+  }
+
+  function select(id: string) {
+    listId = id;
+    onSelect();
+  }
 
   function lastSyncLabel(ms: number | null) {
     if (!ms) return t('sidebar.never');
@@ -30,7 +59,7 @@
   <button class="search" onclick={onSearch}><span>{t('sidebar.search')}</span><kbd>Ctrl K</kbd></button>
 
   {#if running}
-    <button class="live" onclick={() => { listId = 'running'; onSelect(); }}>
+    <button class="live" onclick={() => select('running')}>
       <span class="dot"></span>
       <span class="name">{running.name}</span>
       <span class="small">{running.unlocked}/{running.total ?? '?'}</span>
@@ -38,29 +67,41 @@
   {/if}
 
   <nav>
-    {#each SMART_LISTS as l (l.id)}
-      {#if l.id !== 'running' && (counts[l.id] > 0 || l.id === 'all')}
-        <button
-          class="ghost item"
-          class:active={listId === l.id}
-          title={t(`list.${l.id}.hint` as MessageKey)}
-          onclick={() => { listId = l.id; onSelect(); }}
-        >
-          <span>{t(`list.${l.id}` as MessageKey)}</span><span class="muted small">{counts[l.id]}</span>
-        </button>
-      {/if}
+    {#each sections as s (s.id)}
+      <!-- The active list stays visible even in a collapsed section. -->
+      {@const open = !collapsed[s.id] || s.lists.includes(listId)}
+      <div class="section">
+        {#if s.id !== 'library'}
+          <button class="ghost head" onclick={() => toggle(s.id)} aria-expanded={open}>
+            <span>{t(`section.${s.id}` as MessageKey)}</span><span class="chev" class:open>›</span>
+          </button>
+        {/if}
+        {#if open}
+          {#each s.lists as id (id)}
+            <button class="ghost item" class:active={listId === id} title={t(`list.${id}.hint` as MessageKey)} onclick={() => select(id)}>
+              <span>{t(`list.${id}` as MessageKey)}</span><span class="muted small">{counts[id]}</span>
+            </button>
+          {/each}
+        {/if}
+      </div>
     {/each}
-    <button class="ghost item" class:active={listId === 'appAchievements'} onclick={() => { listId = 'appAchievements'; onSelect(); }}>
-      <span>🏅 {t('sidebar.appAchievements')}</span><span class="muted small">{appAchCount}/{APP_ACHIEVEMENTS.length}</span>
-    </button>
   </nav>
 
-  <div class="stats">
-    <div><b>{stats.perfect}</b><span class="muted small">{t('sidebar.perfect')}</span></div>
-    <div><b>{Math.round(stats.avgCompletion)} %</b><span class="muted small">{t('sidebar.avgCompletion')}</span></div>
-    <div><b>{stats.unlocked}</b><span class="muted small">{t('sidebar.achievements')}</span></div>
-    <div><b>{stats.rarityScore}</b><span class="muted small">{t('sidebar.rarityPoints')}</span></div>
-  </div>
+  <button class="profile" class:active={listId === 'appAchievements'} onclick={() => select('appAchievements')} title={t('sidebar.openMilestones')}>
+    <div class="stats">
+      <div><b>{stats.perfect}</b><span class="muted small">{t('sidebar.perfect')}</span></div>
+      <div><b>{Math.round(stats.avgCompletion)} %</b><span class="muted small">{t('sidebar.avgCompletion')}</span></div>
+      <div><b>{stats.unlocked}</b><span class="muted small">{t('sidebar.achievements')}</span></div>
+      <div><b>{stats.rarityScore}</b><span class="muted small">{t('sidebar.rarityPoints')}</span></div>
+    </div>
+    <div class="milestones">
+      <span class="small">🏅 {t('sidebar.appAchievements')}</span>
+      <span class="muted small">{appAchCount}/{APP_ACHIEVEMENTS.length}</span>
+    </div>
+    <div class="bar" class:perfect={appAchCount === APP_ACHIEVEMENTS.length}>
+      <i style="width:{(appAchCount / APP_ACHIEVEMENTS.length) * 100}%"></i>
+    </div>
+  </button>
 
   <footer>
     {#if app.update}
@@ -108,11 +149,28 @@
   }
   .live .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 30%, transparent); }
-  nav { display: grid; gap: 1px; }
+  nav { display: grid; gap: 10px; }
+  .section { display: grid; gap: 1px; }
+  .head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .chev { transition: transform 0.15s; }
+  .chev.open { transform: rotate(90deg); }
   .item { display: flex; justify-content: space-between; text-align: left; padding: 6px 8px; }
   .item.active { background: var(--accent-soft); color: var(--accent); }
-  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: auto; }
-  .stats div { display: grid; background: var(--surface-2); border-radius: 6px; padding: 6px 8px; }
+  .profile { display: grid; gap: 6px; margin-top: auto; padding: 8px; text-align: left; background: var(--surface-2); border-color: transparent; }
+  .profile:hover, .profile.active { border-color: var(--accent); }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .stats div { display: grid; background: var(--surface); border-radius: 6px; padding: 6px 8px; }
+  .milestones { display: flex; justify-content: space-between; align-items: center; padding: 2px 2px 0; }
   footer { display: grid; gap: 4px; }
   .row { display: flex; align-items: center; gap: 2px; }
   .row span { flex: 1; }
