@@ -8,6 +8,7 @@
   import GameDetail from './views/GameDetail.svelte';
   import Palette from './views/Palette.svelte';
   import SettingsView from './views/Settings.svelte';
+  import AppAchievements from './views/AppAchievements.svelte';
 
   let listId = $state('all');
   let openAppId = $state<number | null>(null);
@@ -47,6 +48,8 @@
     <main>
       {#if openGame}
         <GameDetail game={openGame} onBack={() => (openAppId = null)} />
+      {:else if listId === 'appAchievements'}
+        <AppAchievements />
       {:else}
         <Library {listId} onOpen={(id) => (openAppId = id)} />
       {/if}

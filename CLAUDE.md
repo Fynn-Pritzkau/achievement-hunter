@@ -32,6 +32,11 @@ Befehle: `npm run tauri dev` (App), `npm run dev` (nur UI im Browser, Steam übe
 - Pro Game werden Aggregate (`easyOpen`, `effort`, `rarestOpen`, `rarityScore`, `lastUnlock`) gespeichert, damit Listen nicht alle Achievements laden müssen. Nach jeder Änderung an Achievements `aggregate()` neu rechnen.
 - **Steam-Regeln:** nie in Steam-Ordner schreiben, nichts injizieren, keinen Prozessspeicher lesen, kein Steamworks-SDK mit fremden AppIDs, keine Achievements setzen. Web-API-Key bleibt im Windows Credential Manager (`get_secret`/`set_secret`).
 
+## App-Achievements
+- Eigene Achievements der App, nicht die von Steam (`src/lib/appAchievements.ts`, View `AppAchievements.svelte`). Sie werden nur aus den Game-Aggregaten in `app.games` berechnet (`libraryStats`): keine API-Calls, keine Achievement-Listen laden.
+- Verdiente stehen als `{id: unixMs}` in Meta `appAchievements` und bleiben verdient, auch wenn ein Spiel sein Perfect verliert. Geprüft wird 1 s nach Game-Updates (gebündelt). Ab 3 neuen gleichzeitig gibt es nur eine Sammelbenachrichtigung.
+- Neues App-Achievement: Eintrag in `APP_ACHIEVEMENTS` (mit `tier` 1–3 = leicht/mittel/schwer) plus `appAch.<id>` und `appAch.<id>.desc` (`{n}` = Ziel) in beiden Sprachen. IDs nie umbenennen, sonst gehen verdiente verloren.
+
 ## Tests
 - `npm test` (Vitest): `tests/fakeSteam.ts` ist eine Fake-Web-API, die Calls zählt; `tests/fakeLocal.ts` ein Fake-Cache. Neue Sync-Logik immer mit einer Call-Anzahl testen („kostet genau N Calls“).
 - `cargo test --lib` in `src-tauri`: Parser-Tests mit synthetischen Bytes. Keine Tests mit echten Nutzerdaten oder echten Steam-IDs committen.

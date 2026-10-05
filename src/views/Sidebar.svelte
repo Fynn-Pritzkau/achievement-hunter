@@ -2,6 +2,7 @@
   import { app } from '../lib/app.svelte';
   import { t, type MessageKey } from '../lib/i18n.svelte';
   import { SMART_LISTS, totals } from '../lib/lists';
+  import { APP_ACHIEVEMENTS } from '../lib/appAchievements';
 
   let {
     listId = $bindable(),
@@ -15,6 +16,7 @@
     Object.fromEntries(SMART_LISTS.map((l) => [l.id, app.games.filter((g) => l.filter(g, ctx)).length])),
   );
   const stats = $derived(totals(app.games));
+  const appAchCount = $derived(Object.keys(app.appAchievements).length);
   const running = $derived(app.games.find((g) => g.appid === app.runningAppId));
 
   function lastSyncLabel(ms: number | null) {
@@ -48,6 +50,9 @@
         </button>
       {/if}
     {/each}
+    <button class="ghost item" class:active={listId === 'appAchievements'} onclick={() => { listId = 'appAchievements'; onSelect(); }}>
+      <span>🏅 {t('sidebar.appAchievements')}</span><span class="muted small">{appAchCount}/{APP_ACHIEVEMENTS.length}</span>
+    </button>
   </nav>
 
   <div class="stats">
