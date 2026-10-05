@@ -54,7 +54,8 @@ class AppState {
   runningAppIds = $state<number[]>([]);
   lastSync = $state<number | null>(null);
   error = $state<string | null>(null);
-  recentUnlocks = $state<UnlockEvent[]>([]);
+  /** Bumped on every new unlock, so views showing unlocks can reload. */
+  unlockSeq = $state(0);
   /** Earned app achievements (the app's own, not Steam's), see appAchievements.ts. */
   appAchievements = $state<Earned>({});
   version = $state('');
@@ -233,7 +234,7 @@ class AppState {
   }
 
   private onUnlock(e: UnlockEvent) {
-    this.recentUnlocks = [e, ...this.recentUnlocks].slice(0, 20);
+    this.unlockSeq++;
     if (!this.settings.notifyUnlocks) return;
     const p = e.achievement.percent;
     const rare = p != null && p < 10 ? t('notify.rare', { p: fmtPercent(p) }) : p != null ? ` (${fmtPercent(p)})` : '';

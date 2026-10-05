@@ -195,12 +195,25 @@ export class SqliteRepo implements Repo {
     }
   }
 
-  async getUnlocks(sinceUnix: number) {
+  async getUnlocks({ before, limit }: { before?: number; limit: number }) {
+    const cols = ACH_COLS.split(', ').map((c) => `a.${c}`).join(', ');
     const rows = await this.db.select<any[]>(
-      `SELECT ${ACH_COLS} FROM achievements WHERE achieved = 1 AND unlocktime >= $1 ORDER BY unlocktime DESC`,
-      [sinceUnix],
+      `SELECT ${cols}, g.name AS game_name FROM achievements a JOIN games g ON g.appid = a.appid
+       WHERE a.achieved = 1 AND a.unlocktime > 0 AND a.unlocktime < $1 AND g.hidden = 0
+       ORDER BY a.unlocktime DESC LIMIT $2`,
+      [before ?? Number.MAX_SAFE_INTEGER, limit],
     );
-    return rows.map(rowToAch);
+    return rows.map((r) => ({ ...rowToAch(r), gameName: r.game_name as string }));
+  }
+
+  async unlocksPerDay(sinceUnix: number) {
+    return this.db.select<{ day: string; n: number }[]>(
+      `SELECT date(a.unlocktime, 'unixepoch', 'localtime') AS day, COUNT(*) AS n
+       FROM achievements a JOIN games g ON g.appid = a.appid
+       WHERE a.achieved = 1 AND a.unlocktime >= $1 AND g.hidden = 0
+       GROUP BY day`,
+      [Math.max(sinceUnix, 1)],
+    );
   }
 
   async addSnapshots(snapshots: Snapshot[]) {

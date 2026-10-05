@@ -87,6 +87,10 @@
     {/each}
   </nav>
 
+  <button class="ghost item" class:active={listId === 'history'} onclick={() => select('history')}>
+    <span>{t('sidebar.history')}</span>
+  </button>
+
   <button class="profile" class:active={listId === 'appAchievements'} onclick={() => select('appAchievements')} title={t('sidebar.openMilestones')}>
     <div class="stats">
       <div><b>{stats.perfect}</b><span class="muted small">{t('sidebar.perfect')}</span></div>
