@@ -8,6 +8,12 @@ export function fmtDate(unix: number): string | null {
   return dayKey(unix * 1000);
 }
 
+export function fmtDateTime(unix: number): string | null {
+  if (!unix) return null;
+  const d = new Date(unix * 1000);
+  return `${dayKey(unix * 1000)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 /** Local calendar day as YYYY-MM-DD. */
 export function dayKey(ms: number): string {
   const d = new Date(ms);

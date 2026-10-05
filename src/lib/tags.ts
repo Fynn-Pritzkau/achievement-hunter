@@ -1,6 +1,6 @@
 import type { SchemaAchievement } from './types';
 
-export type AutoTag = 'online' | 'coop' | 'difficulty' | 'collectible' | 'grind' | 'speedrun';
+export type AutoTag = 'online' | 'coop' | 'difficulty' | 'collectible' | 'grind' | 'speedrun' | 'missable';
 
 /** Patterns in English and German, matched against name + description. */
 const RULES: [AutoTag, RegExp][] = [
@@ -13,6 +13,11 @@ const RULES: [AutoTag, RegExp][] = [
   [
     'collectible',
     /\b(collect(ed)? (all|every)|find (all|every)|all (the )?(collectibles|secrets|items|chests)|every (collectible|secret)|sammle alle|finde alle|alle (sammelobjekte|geheimnisse))\b/i,
+  ],
+  // A guess: one-shot choices, run-wide conditions and "before X" windows can be lost for the current playthrough.
+  [
+    'missable',
+    /\b((first|single|same|one) playthrough|in (a|one) single (run|playthrough|save)|point of no return|before (leaving|finishing|completing|reaching|the end|chapter|act)|spare|let \w+ live|side with|without (ever|using|killing|saving|upgrading|buying)|(ersten|einem|einzigen) durchlauf|bevor du|vor (kapitel|akt|dem ende)|verschon(e|t)|ohne (jemals|zu töten|zu speichern|aufzuwerten|etwas zu kaufen))\b/i,
   ],
   ['speedrun', /\b(under|within|in less than|unter|innerhalb (von)?) \d+ ?(min(ute)?s?|minuten|seconds?|sekunden|hours?|stunden)\b/i],
 ];
