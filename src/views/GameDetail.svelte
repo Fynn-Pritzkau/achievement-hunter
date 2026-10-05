@@ -1,8 +1,9 @@
 <script lang="ts">
   import { app } from '../lib/app.svelte';
   import { STATUSES, completion, isPerfect, type Achievement, type Game, type Status } from '../lib/types';
-  import { coverUrl, fmtDate, fmtHours, fmtPercent } from '../lib/util';
+  import { coverUrl, fmtDate, fmtDateTime, fmtHours, fmtPercent } from '../lib/util';
   import { isMessageKey, t } from '../lib/i18n.svelte';
+  import { autoTags } from '../lib/tags';
 
   let { game, onBack }: { game: Game; onBack: () => void } = $props();
 
@@ -10,6 +11,10 @@
   const tagLabel = (tag: string) => {
     const key = `tag.${tag}`;
     return isMessageKey(key) ? t(key) : tag;
+  };
+  const tagHint = (tag: string) => {
+    const key = `tag.${tag}.hint`;
+    return isMessageKey(key) ? t(key) : null;
   };
 
   type View = 'open' | 'pinned' | 'done' | 'all';
@@ -24,7 +29,8 @@
   let refreshing = $state(false);
 
   async function load(appid: number) {
-    list = await app.repo.getAchievements(appid);
+    // Stored tags only change on a schema refresh; add the ones from newer rules right away.
+    list = (await app.repo.getAchievements(appid)).map((a) => ({ ...a, tags: [...new Set([...a.tags, ...autoTags(a)])] }));
   }
   $effect(() => {
     // Reload when the game changes or the sync updated it.
@@ -52,6 +58,15 @@
     return l.sort((a, b) => Number(b.pinned) - Number(a.pinned) || Number(a.excluded) - Number(b.excluded) || cmp[order](a, b));
   });
 
+  /** Position among the achievements with a known rate, rarest first. */
+  const rarityRank = $derived.by(() => {
+    const known = list.filter((a) => a.percent != null).sort((a, b) => a.percent! - b.percent!);
+    return { total: known.length, of: new Map(known.map((a, i) => [a.apiname, i + 1])) };
+  });
+  const rarityLabel = (p: number) =>
+    p < 5 ? t('game.rarityVeryRare') : p < 15 ? t('game.rarityRare') : p <= 50 ? t('game.rarityUncommon') : t('game.rarityCommon');
+  const reveal = (a: Achievement) => (revealed = new Set([...revealed, a.apiname]));
+
   async function save(a: Achievement, patch: Partial<Achievement>) {
     Object.assign(a, patch);
     await app.updateAchievements(game, $state.snapshot(list) as Achievement[]);
@@ -73,6 +88,7 @@
       { label: 'Steam Guides', url: `https://steamcommunity.com/app/${game.appid}/guides/?searchText=${q(a.name)}` },
       { label: 'YouTube', url: `https://www.youtube.com/results?search_query=${q(`${game.name} ${a.name} achievement`)}` },
       { label: 'SteamHunters', url: `https://steamhunters.com/apps/${game.appid}/achievements` },
+      { label: 'TrueSteamAchievements', url: `https://www.truesteamachievements.com/searchresults.aspx?search=${q(game.name)}` },
     ];
   }
 
@@ -151,8 +167,8 @@
                 class="spoiler small"
                 role="button"
                 tabindex="0"
-                onclick={(e) => { e.stopPropagation(); revealed = new Set([...revealed, a.apiname]); }}
-                onkeydown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); revealed = new Set([...revealed, a.apiname]); } }}
+                onclick={(e) => { e.stopPropagation(); reveal(a); }}
+                onkeydown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); reveal(a); } }}
               >{t('game.spoiler')}</span>
             {:else}
               <div class="small muted">{a.description || '—'}</div>
@@ -170,7 +186,37 @@
           </div>
         </div>
         {#if expanded === a.apiname}
+          {@const rank = rarityRank.of.get(a.apiname)}
           <div class="extra">
+            {#if a.tags.includes('missable') && !a.achieved}
+              <div class="warn">
+                <b>{t('game.missableWarn')}</b>
+                <span class="small muted">{t('game.missableGuess')}</span>
+              </div>
+            {/if}
+            <dl>
+              <dt>{t('game.description')}</dt>
+              <dd>
+                {#if spoiler}
+                  <button class="ghost small spoiler" onclick={() => reveal(a)}>{t('game.spoiler')}</button>
+                {:else}
+                  {a.description || '—'}
+                {/if}
+              </dd>
+              <dt>{t('game.rarity')}</dt>
+              <dd>
+                {#if a.percent != null}
+                  {fmtPercent(a.percent)} · {rarityLabel(a.percent)}
+                  {#if rank}<span class="muted"> · {t('game.rarityRank', { n: rank, total: rarityRank.total })}</span>{/if}
+                {:else}–{/if}
+              </dd>
+              <dt>{t('game.unlockedAt')}</dt>
+              <dd>{a.achieved ? (fmtDateTime(a.unlocktime) ?? '✓') : t('game.notUnlocked')}</dd>
+              {#each a.tags as tg}
+                <dt><span class="chip">{tagLabel(tg)}</span></dt>
+                <dd class="small muted">{tagHint(tg) ?? ''}</dd>
+              {/each}
+            </dl>
             <textarea
               rows="2"
               placeholder={t('game.notePlaceholder')}
@@ -248,6 +294,19 @@
   .pct { font-variant-numeric: tabular-nums; font-weight: 600; }
   .pct.rare { color: var(--gold); }
   .extra { display: grid; gap: 8px; padding: 0 10px 10px 64px; }
+  .warn {
+    display: grid;
+    gap: 2px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid color-mix(in srgb, var(--gold) 50%, transparent);
+    background: color-mix(in srgb, var(--gold) 12%, transparent);
+  }
+  .warn b { color: var(--gold); }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; align-items: baseline; }
+  dt { color: var(--muted); }
+  dd { margin: 0; }
+  dd .spoiler { padding: 0; }
   textarea { width: 100%; resize: vertical; }
   .links { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
   .links a { color: var(--accent); }

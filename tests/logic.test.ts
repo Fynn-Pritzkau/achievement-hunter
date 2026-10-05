@@ -36,6 +36,16 @@ describe('autoTags', () => {
     expect(t('Chapter 1', 'Complete chapter 1')).toEqual([]);
     expect(t('Party like 1999', 'Reach the year 1999')).toEqual([]);
   });
+  it('flags likely missable achievements', () => {
+    expect(t('Mercy', 'Spare the bandit leader')).toContain('missable');
+    expect(t('Pacifist', 'Finish the game without killing anyone')).toContain('missable');
+    expect(t('Early Bird', 'Find the key before leaving the village')).toContain('missable');
+    expect(t('One Shot', 'Do it all on your first playthrough')).toContain('missable');
+    expect(t('Gnade', 'Verschone den Banditenanführer')).toContain('missable');
+    expect(t('Puristisch', 'Beende das Spiel ohne jemals zu speichern')).toContain('missable');
+    expect(t('Done', 'Complete the game')).not.toContain('missable');
+    expect(t('Untouchable', 'Win without dying')).toEqual(['difficulty']);
+  });
 });
 
 describe('limiter and retry', () => {
