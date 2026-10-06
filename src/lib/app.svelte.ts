@@ -338,6 +338,7 @@ class AppState {
     });
     this.scheduler.start();
     void this.sync();
+    void this.engine.backfillHiddenDescriptions().catch(() => {});
   }
 
   async sync(force = false) {
@@ -372,7 +373,11 @@ class AppState {
   async fillHiddenDescriptions(appid: number): Promise<boolean> {
     if (!this.engine || this.descriptionsTried.has(appid)) return false;
     this.descriptionsTried.add(appid);
-    return this.engine.fillHiddenDescriptions(appid).catch(() => false);
+    return this.engine.fillHiddenDescriptions(appid).catch(() => {
+      // A failed attempt is retried the next time the game is opened.
+      this.descriptionsTried.delete(appid);
+      return false;
+    });
   }
 
   private upsertLocal(g: Game) {

@@ -194,6 +194,36 @@ describe('Steam local cache', () => {
     expect(await repo.getGame(2)).toMatchObject({ owned: true, playtime: 30 });
   });
 
+  it('fills hidden descriptions of games stored without them from the cache, once and for free', async () => {
+    const { steam, local, repo, engine } = setup();
+    steam.add({ appid: 1, name: 'Alpha', playtime: 120, lastPlayed: RECENT, achievements: { a: [false, 0, 80], secret: [false, 0, 17] }, hidden: ['secret'], descriptionsFail: true });
+    // Synced by an old version: no cache, no hidden description.
+    await new SyncEngine({ api: steam.api(), repo, steamid: '76561198000000000', now: () => NOW }).sync();
+    expect((await repo.getAchievements(1)).find((a) => a.apiname === 'secret')?.description).toBe('');
+    local.set(1, { schemaMtime: RECENT - 86400, statsMtime: null, achievements: { a: [false, 0], secret: [false, 0] } });
+    steam.calls = [];
+
+    expect(await engine.backfillHiddenDescriptions()).toBe(1);
+    expect(steam.count()).toBe(0);
+    expect((await repo.getAchievements(1)).find((a) => a.apiname === 'secret')?.description).toBe('Do secret');
+    // Done once: later starts don't read every game again.
+    local.reads = 0;
+    expect(await engine.backfillHiddenDescriptions()).toBe(0);
+    expect(local.reads).toBe(0);
+  });
+
+  it('filling hidden descriptions waits for a running sync before it writes', async () => {
+    const { steam, local, repo, engine } = setup();
+    steam.add({ appid: 1, name: 'Alpha', playtime: 120, lastPlayed: RECENT, achievements: { secret: [false, 0, 17] }, hidden: ['secret'], descriptionsFail: true });
+    await new SyncEngine({ api: steam.api(), repo, steamid: '76561198000000000', now: () => NOW }).sync();
+    local.set(1, { schemaMtime: RECENT - 86400, statsMtime: null, achievements: { secret: [false, 0] } });
+
+    const [, filled] = await Promise.all([engine.sync({ force: true }), engine.fillHiddenDescriptions(1, { useApi: false })]);
+    expect(filled).toBe(true);
+    // The forced sync saved its own list; the description went on top and wasn't lost.
+    expect((await repo.getAchievements(1))[0].description).toBe('Do secret');
+  });
+
   it('converts IDs and icon names', () => {
     expect(accountIdOf('76561198000000001')).toBe(39734273);
     expect(iconUrl(5, 'x.jpg')).toBe('https://steamcdn-a.akamaihd.net/steamcommunity/public/images/apps/5/x.jpg');

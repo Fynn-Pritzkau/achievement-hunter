@@ -230,6 +230,8 @@ export class SyncEngine {
     list: SchemaAchievement[],
     local: LocalGame | null,
     stored: Achievement[] = [],
+    /** false = only what we stored and Steam's cache, no API call. */
+    useApi = true,
   ): Promise<boolean> {
     const missing = () => list.filter((a) => a.hidden && !a.description);
     if (!missing().length) return false;
@@ -247,7 +249,7 @@ export class SyncEngine {
     if (local?.languageMatch) {
       filled += fill(new Map(local.achievements.filter((a) => a.description).map((a) => [a.apiname, a.description])));
     }
-    if (missing().length) {
+    if (useApi && missing().length) {
       try {
         filled += fill(await this.opts.api.getDescriptions(appid));
       } catch (e) {
@@ -258,15 +260,49 @@ export class SyncEngine {
     return filled > 0;
   }
 
-  /** Fills missing hidden descriptions of a stored game (data from before they were fetched). */
-  async fillHiddenDescriptions(appid: number): Promise<boolean> {
-    // Don't write while a sync might be saving the same game.
-    await Promise.all([this.running, this.localRunning]);
+  /**
+   * Fills missing hidden descriptions of a stored game (data from before they were fetched).
+   * `useApi: false` only reads Steam's cache. True when something was filled.
+   */
+  async fillHiddenDescriptions(appid: number, { useApi = true } = {}): Promise<boolean> {
     const { repo } = this.opts;
+    // Look the texts up first, so a sync in flight doesn't delay them.
+    const found = await repo.getAchievements(appid);
+    if (!(await this.fillDescriptions(appid, found, await this.readLocal(appid), [], useApi))) return false;
+    const texts = new Map(found.filter((a) => a.hidden && a.description).map((a) => [a.apiname, a.description]));
+
+    // Don't write while a sync might be saving the same game; apply the texts to what it saved.
+    while (this.running || this.localRunning) await Promise.allSettled([this.running, this.localRunning]);
     const list = await repo.getAchievements(appid);
-    if (!(await this.fillDescriptions(appid, list, await this.readLocal(appid)))) return false;
-    await repo.saveAchievements(appid, mergeSchema(list, list));
+    let filled = 0;
+    for (const a of list) {
+      const d = a.hidden && !a.description ? texts.get(a.apiname) : undefined;
+      if (!d) continue;
+      a.description = d;
+      filled++;
+    }
+    if (filled) await repo.saveAchievements(appid, mergeSchema(list, list));
     return true;
+  }
+
+  /**
+   * One-time repair for games synced before hidden descriptions were fetched: fills them from
+   * Steam's cache, no API call. Games the cache doesn't know get them when opened.
+   * Returns the number of games filled.
+   */
+  async backfillHiddenDescriptions(): Promise<number> {
+    const { local, repo } = this.opts;
+    if (!local || (await repo.getMeta('hiddenDescBackfill'))) return 0;
+    let n = 0;
+    // One game at a time, so only one achievement list is in memory.
+    for (const g of await repo.getGames()) {
+      if (!g.total) continue;
+      const list = await repo.getAchievements(g.appid);
+      if (!list.some((a) => a.hidden && !a.description)) continue;
+      if (await this.fillHiddenDescriptions(g.appid, { useApi: false })) n++;
+    }
+    await repo.setMeta('hiddenDescBackfill', String(this.now()));
+    return n;
   }
 
   private async runTasks(
