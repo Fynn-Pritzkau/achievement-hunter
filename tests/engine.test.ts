@@ -144,6 +144,15 @@ describe('SyncEngine', () => {
     await expect(engine.sync()).rejects.toMatchObject({ kind: 'private' });
   });
 
+  it('a short empty library answer from Steam is asked again, not reported as private', async () => {
+    const { steam, engine } = setup();
+    steam.add({ appid: 1, name: 'A', playtime: 1, lastPlayed: RECENT, achievements: { a: [false, 0, 1] } });
+    steam.emptyOwnedNext = 1;
+    const res = await engine.sync();
+    expect(res.aborted).toBeFalsy();
+    expect(steam.count('GetOwnedGames')).toBe(2);
+  });
+
   it('keeps user pins, notes and exclusions across schema refreshes', async () => {
     const { steam, repo, engine } = setup();
     steam.add({ appid: 1, name: 'Alpha', playtime: 120, lastPlayed: RECENT, achievements: { a: [false, 0, 80], b: [false, 0, 0] } });

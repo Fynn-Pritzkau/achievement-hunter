@@ -113,19 +113,30 @@ export class SteamApi {
   }
 
   async getOwnedGames(steamid: string): Promise<OwnedGame[]> {
-    const json = await this.call('IPlayerService/GetOwnedGames/v0001', {
-      steamid,
-      include_appinfo: 1,
-      include_played_free_games: 1,
-    });
-    const resp = json?.response;
-    if (!resp) throw new SteamApiError('parse', 'GetOwnedGames: empty response');
-    // An empty `response` object means the game list is private.
-    if (!resp.games) {
-      if (resp.game_count === 0) return [];
-      throw new SteamApiError('private', 'Game details are private — set them to public in your Steam privacy settings');
-    }
-    return resp.games;
+    // An empty `response` object means the game list is private, but Steam also sends one for a
+    // moment when it is busy. Ask again before blaming the privacy settings.
+    return withRetry(
+      async () => {
+        const json = await this.call('IPlayerService/GetOwnedGames/v0001', {
+          steamid,
+          include_appinfo: 1,
+          include_played_free_games: 1,
+        });
+        const resp = json?.response;
+        if (!resp) throw new SteamApiError('parse', 'GetOwnedGames: empty response');
+        if (!resp.games) {
+          if (resp.game_count === 0) return [];
+          throw new SteamApiError('private', 'Game details are private — set them to public in your Steam privacy settings');
+        }
+        return resp.games as OwnedGame[];
+      },
+      {
+        retries: this.opts.retries ?? 2,
+        baseDelayMs: this.opts.retryBaseMs ?? 5000,
+        sleep: this.opts.sleep,
+        retryable: (e) => e instanceof SteamApiError && e.kind === 'private',
+      },
+    );
   }
 
   /**

@@ -23,6 +23,8 @@ export class FakeSteam {
   games = new Map<number, FakeGame>();
   calls: string[] = [];
   privateProfile = false;
+  /** GetOwnedGames answers with an empty response this many times, as Steam does when busy. */
+  emptyOwnedNext = 0;
   rateLimitNext = 0;
 
   add(g: FakeGame) {
@@ -49,6 +51,10 @@ export class FakeSteam {
 
     if (path.includes('GetOwnedGames')) {
       if (this.privateProfile) return json({ response: {} });
+      if (this.emptyOwnedNext > 0) {
+        this.emptyOwnedNext--;
+        return json({ response: {} });
+      }
       return json({
         response: {
           game_count: this.games.size,
