@@ -2,6 +2,8 @@ import type { PlayerAchievement, SchemaAchievement } from '../types';
 
 /** One game as Steam keeps it on disk: schema and progress in one read. */
 export interface LocalGame {
+  /** The game's name from the schema file, "" if missing. */
+  name: string;
   /** Unix seconds when Steam last wrote the schema file. */
   schemaMtime: number;
   /** Unix seconds when Steam last wrote the user's stats, null = no stats file. */

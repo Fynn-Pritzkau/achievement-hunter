@@ -14,6 +14,8 @@ export interface FakeGame {
   hidden?: string[];
   /** Make GetGameAchievements fail for this game. */
   descriptionsFail?: boolean;
+  /** Played (family sharing, free weekend …) but left out of GetOwnedGames. */
+  notOwned?: boolean;
 }
 
 /** A tiny in-memory Steam Web API. Counts calls per endpoint. */
@@ -50,7 +52,7 @@ export class FakeSteam {
       return json({
         response: {
           game_count: this.games.size,
-          games: [...this.games.values()].map((x) => ({
+          games: [...this.games.values()].filter((x) => !x.notOwned).map((x) => ({
             appid: x.appid,
             name: x.name,
             playtime_forever: x.playtime,

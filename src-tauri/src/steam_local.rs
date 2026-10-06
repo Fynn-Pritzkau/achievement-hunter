@@ -192,6 +192,8 @@ pub struct Progress {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalGame {
+    /// The game's name as Steam stores it with the schema ("" if missing).
+    name: String,
     /// Unix seconds when Steam last wrote the schema file.
     schema_mtime: u64,
     /// Unix seconds when Steam last wrote the user's stats, None = no stats file.
@@ -213,13 +215,13 @@ pub fn local_achievements(account_id: u32, appid: u32, language: String) -> Opti
     let stats_mtime = fs::metadata(&stats_path).ok().map(|m| mtime_secs(&m));
     let stats_buf = stats_mtime.and_then(|_| fs::read(&stats_path).ok());
 
-    let (language_match, achievements) = parse_game(&schema_buf, stats_buf.as_deref(), appid, &language)?;
-    Some(LocalGame { schema_mtime, stats_mtime, language_match, achievements })
+    let (name, language_match, achievements) = parse_game(&schema_buf, stats_buf.as_deref(), appid, &language)?;
+    Some(LocalGame { name, schema_mtime, stats_mtime, language_match, achievements })
 }
 
 /// Parses the schema and (if present) the user's stats file of one game.
-/// Returns whether names were in `language`, and the achievements. None = a file is unreadable.
-fn parse_game(schema_buf: &[u8], stats_buf: Option<&[u8]>, appid: u32, language: &str) -> Option<(bool, Vec<LocalAchievement>)> {
+/// Returns the game name, whether names were in `language`, and the achievements. None = a file is unreadable.
+fn parse_game(schema_buf: &[u8], stats_buf: Option<&[u8]>, appid: u32, language: &str) -> Option<(String, bool, Vec<LocalAchievement>)> {
     let schema_root = section(schema_buf, &mut 0, true)?;
     let stats_root = match stats_buf {
         Some(b) => Some(section(b, &mut 0, true)?),
@@ -292,7 +294,7 @@ fn parse_game(schema_buf: &[u8], stats_buf: Option<&[u8]>, appid: u32, language:
         }
     }
 
-    Some((language_match, achievements))
+    Some((text(get(game, "gamename")).to_owned(), language_match, achievements))
 }
 
 /// `bits/<bit>/progress`: the stat a "collect 50" achievement counts, shifted by `min_val`.
@@ -466,6 +468,7 @@ mod tests {
     fn schema() -> Vec<u8> {
         let mut b = Vec::new();
         s(&mut b, 0x00, "5");
+        put_str(&mut b, "gamename", "Test Game");
         s(&mut b, 0x00, "stats");
         for (id, name) in [("1", "kills"), ("2", "distance"), ("3", "unused")] {
             s(&mut b, 0x00, id);
@@ -502,7 +505,8 @@ mod tests {
 
     #[test]
     fn reads_progress_of_stat_achievements() {
-        let (_, list) = parse_game(&schema(), Some(&stats()), 5, "english").unwrap();
+        let (name, _, list) = parse_game(&schema(), Some(&stats()), 5, "english").unwrap();
+        assert_eq!(name, "Test Game");
         let by = |n: &str| list.iter().find(|a| a.apiname == n).unwrap();
         assert_eq!(by("KILL_50").progress, Some(Progress { current: 37.0, max: 50.0 }));
         assert_eq!(by("WALK_10").progress, Some(Progress { current: 2.5, max: 10.0 }));
@@ -517,7 +521,7 @@ mod tests {
 
     #[test]
     fn no_progress_without_stats_file() {
-        let (_, list) = parse_game(&schema(), None, 5, "english").unwrap();
+        let (_, _, list) = parse_game(&schema(), None, 5, "english").unwrap();
         assert!(list.iter().all(|a| a.progress.is_none() && !a.achieved));
     }
 

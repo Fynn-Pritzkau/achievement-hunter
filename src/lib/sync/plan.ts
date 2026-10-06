@@ -43,7 +43,8 @@ export function planSync(owned: OwnedGame[], known: Map<number, Game>, opts: Pla
 
   for (const o of owned) {
     const k = known.get(o.appid);
-    const played = o.playtime_forever > 0;
+    // Games we don't own only show up with an unlock, so they were played even if Steam has no playtime.
+    const played = o.playtime_forever > 0 || o.owned === false;
     const recency = -(o.rtime_last_played ?? 0); // most recently played first
 
     if (!k || k.total == null) {

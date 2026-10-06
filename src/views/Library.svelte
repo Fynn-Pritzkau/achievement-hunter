@@ -64,6 +64,7 @@
               <span class="name">{g.name}</span>
               {#if app.runningAppIds.includes(g.appid)}<span class="chip accent">{t('library.running')}</span>{/if}
               {#if g.wasPerfect && !isPerfect(g)}<span class="chip warn" title={t('library.lostHint')}>{t('list.lost')}</span>{/if}
+              {#if g.owned === false}<span class="chip" title={t('library.notOwnedHint')}>{t('library.notOwned')}</span>{/if}
             </div>
             {#if g.total}
               <div class="bar" class:perfect={isPerfect(g)}><i style="width:{pct}%"></i></div>

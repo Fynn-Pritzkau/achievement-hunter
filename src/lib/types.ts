@@ -9,6 +9,8 @@ export interface OwnedGame {
   playtime_forever: number;
   rtime_last_played?: number;
   img_icon_url?: string;
+  /** false = found in Steam's local cache only (family sharing, free weekend, refund, playtest). */
+  owned?: boolean;
 }
 
 /** One achievement as described by GetSchemaForGame. */
@@ -63,6 +65,11 @@ export interface Game {
   wasPerfect: boolean;
   hidden: boolean;
   pinned: boolean;
+  /**
+   * false = not in GetOwnedGames, but played with at least one unlock. Steam's profile
+   * average counts these too, so they are tracked like owned games.
+   */
+  owned: boolean;
   // Aggregates, kept up to date by the sync so lists don't need every achievement in memory.
   /** Open achievements that more than 50 % of players have. */
   easyOpen: number;
@@ -101,6 +108,7 @@ export function emptyGame(appid: number, name: string): Game {
     wasPerfect: false,
     hidden: false,
     pinned: false,
+    owned: true,
     easyOpen: 0,
     effort: 0,
     rarestOpen: null,

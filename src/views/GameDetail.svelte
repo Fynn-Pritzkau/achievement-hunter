@@ -126,6 +126,7 @@
         <b>{t('game.noAchievements')}</b>
       {/if}
       <span>{fmtHours(game.playtime)}</span>
+      {#if game.owned === false}<span class="chip" title={t('library.notOwnedHint')}>{t('library.notOwned')}</span>{/if}
       {#if game.lastPlayed}<span>{t('game.lastPlayed', { date: fmtDate(game.lastPlayed) ?? '' })}</span>{/if}
       <span>{t('game.rarityPoints', { n: Math.round(game.rarityScore) })}</span>
     </div>

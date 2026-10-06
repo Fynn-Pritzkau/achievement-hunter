@@ -141,8 +141,10 @@ export class SyncEngine {
   private async doSync(force: boolean): Promise<SyncResult> {
     const { api, repo, steamid } = this.opts;
     const result = emptyResult();
-    const owned = withLocalPlaytime(await api.getOwnedGames(steamid), await this.localPlaytimes());
+    const apiOwned = await api.getOwnedGames(steamid);
     const known = new Map((await repo.getGames()).map((g) => [g.appid, g]));
+    const playtimes = await this.localPlaytimes();
+    const owned = withLocalPlaytime([...apiOwned, ...(await this.notOwnedGames(apiOwned, known, playtimes))], playtimes);
     const ownedById = new Map(owned.map((o) => [o.appid, o]));
 
     const tasks = planSync(owned, known, { now: this.now(), force });
@@ -166,6 +168,52 @@ export class SyncEngine {
   private async localPlaytimes(): Promise<Map<number, LocalPlaytime>> {
     const list = this.opts.local ? await this.opts.local.playtimes().catch(() => []) : [];
     return new Map(list.map((p) => [p.appid, p]));
+  }
+
+  /**
+   * Games Steam leaves out of GetOwnedGames although its profile average counts them
+   * (family sharing, free weekends, refunds, playtests). Known ones come from the repo, new
+   * ones from the local cache: a stats file of this account with at least one unlock.
+   * No API call. Files checked without an unlock are only read again once Steam rewrites them.
+   */
+  private async notOwnedGames(apiOwned: OwnedGame[], known: Map<number, Game>, playtimes: Map<number, LocalPlaytime>): Promise<OwnedGame[]> {
+    const { local, repo } = this.opts;
+    const ownedIds = new Set(apiOwned.map((o) => o.appid));
+    const out: OwnedGame[] = [];
+    for (const k of known.values()) {
+      if (k.owned !== false || ownedIds.has(k.appid)) continue;
+      out.push({ appid: k.appid, name: k.name, playtime_forever: k.playtime, rtime_last_played: k.lastPlayed, img_icon_url: k.iconHash, owned: false });
+    }
+    if (!local) return out;
+
+    const nowSec = Math.floor(this.now() / 1000);
+    let scan: { at: number; none: number[] } | null = null;
+    try {
+      scan = JSON.parse((await repo.getMeta('notOwnedScan')) ?? 'null');
+    } catch {
+      /* rescan */
+    }
+    const changed = new Set(scan ? await local.changedSince(scan.at) : []);
+    const none = new Set((scan?.none ?? []).filter((id) => !changed.has(id)));
+    for (const appid of await local.changedSince(0)) {
+      if (ownedIds.has(appid) || known.has(appid) || none.has(appid)) continue;
+      const g = await this.readLocal(appid);
+      if (!g?.achievements.some((a) => a.achieved)) {
+        none.add(appid);
+        continue;
+      }
+      const p = playtimes.get(appid);
+      out.push({
+        appid,
+        name: g.name || String(appid),
+        playtime_forever: p?.playtime ?? 0,
+        rtime_last_played: p?.lastPlayed || g.statsMtime || 0,
+        owned: false,
+      });
+    }
+    // Overlap by a second, like the local pass: file times have 1 s resolution.
+    await repo.setMeta('notOwnedScan', JSON.stringify({ at: nowSec - 1, none: [...none] }));
+    return out;
   }
 
   private async readLocal(appid: number): Promise<LocalGame | null> {
@@ -360,6 +408,7 @@ export class SyncEngine {
       playtime: o.playtime_forever,
       lastPlayed: o.rtime_last_played ?? 0,
       iconHash: o.img_icon_url ?? g.iconHash,
+      owned: o.owned !== false,
     };
   }
 

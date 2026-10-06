@@ -1,6 +1,7 @@
 import type { LocalGame, LocalPlaytime, LocalSteam } from '../src/lib/steam/local';
 
 export interface FakeLocalGame {
+  name?: string;
   /** Unix seconds. */
   schemaMtime: number;
   /** Unix seconds, null = no stats file. */
@@ -28,6 +29,7 @@ export class FakeLocal implements LocalSteam {
     const g = this.games.get(appid);
     if (!g) return null;
     return {
+      name: g.name ?? '',
       schemaMtime: g.schemaMtime,
       statsMtime: g.statsMtime,
       languageMatch: g.languageMatch ?? true,

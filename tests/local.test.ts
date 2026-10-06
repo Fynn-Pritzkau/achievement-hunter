@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MemoryRepo } from '../src/lib/db/repo';
+import { totals } from '../src/lib/lists';
 import { accountIdOf, iconUrl } from '../src/lib/steam/local';
 import { SyncEngine } from '../src/lib/sync/engine';
 import { Scheduler } from '../src/lib/sync/scheduler';
@@ -139,6 +140,58 @@ describe('Steam local cache', () => {
     running = [];
     await s.tick(630_000);
     expect(steam.calls).toHaveLength(0);
+  });
+
+  it('tracks played games missing from GetOwnedGames, like the profile average on Steam', async () => {
+    const { steam, local, repo, engine } = setup();
+    steam.add({ appid: 1, name: 'Owned', playtime: 120, lastPlayed: RECENT, achievements: { a: [true, 100, 80], b: [true, 100, 30] } });
+    steam.add({ appid: 2, name: 'Shared', playtime: 0, lastPlayed: 0, notOwned: true, achievements: { a: [true, 100, 80], b: [false, 0, 30], c: [false, 0, 10], d: [false, 0, 5] } });
+    local.set(1, { schemaMtime: RECENT, statsMtime: RECENT + 60, achievements: { a: [true, 100], b: [true, 100] } });
+    local.set(2, { name: 'Shared', schemaMtime: RECENT, statsMtime: RECENT, achievements: { a: [true, 100], b: [false, 0], c: [false, 0], d: [false, 0] } });
+    // Played on a free weekend, nothing unlocked: Steam doesn't count it, neither do we.
+    local.set(3, { name: 'Tried', schemaMtime: RECENT, statsMtime: RECENT, achievements: { a: [false, 0] } });
+
+    await engine.sync();
+    // Found on disk; only rarity costs a call, as for an owned game.
+    expect(steam.count()).toBe(3); // GetOwnedGames + 2 × rarity
+    expect(await repo.getGame(2)).toMatchObject({ name: 'Shared', owned: false, unlocked: 1, total: 4 });
+    expect(await repo.getGame(1)).toMatchObject({ owned: true });
+    expect(await repo.getGame(3)).toBeNull();
+    expect(totals(await repo.getGames()).avgCompletion).toBe(62.5);
+
+    // Nothing changed: no calls beyond GetOwnedGames, and the file without unlocks isn't read again.
+    steam.calls = [];
+    local.reads = 0;
+    await engine.sync();
+    expect(steam.count()).toBe(1);
+    expect(local.reads).toBe(0);
+    expect(await repo.getGame(2)).toMatchObject({ owned: false, unlocked: 1 });
+  });
+
+  it('a game first seen without unlocks is picked up once Steam rewrites its stats', async () => {
+    const { steam, local, repo, engine, advance } = setup();
+    const g = local.set(3, { name: 'Tried', schemaMtime: RECENT, statsMtime: RECENT, achievements: { a: [false, 0] } });
+    steam.add({ appid: 3, name: 'Tried', playtime: 0, lastPlayed: 0, notOwned: true, achievements: { a: [false, 0, 50] } });
+    await engine.sync();
+    expect(await repo.getGame(3)).toBeNull();
+
+    advance(60_000);
+    g.achievements.a = [true, SEC + 30];
+    g.statsMtime = SEC + 30;
+    await engine.sync();
+    expect(await repo.getGame(3)).toMatchObject({ owned: false, unlocked: 1, total: 1 });
+  });
+
+  it('a game bought after playing it shared becomes owned', async () => {
+    const { steam, local, repo, engine } = setup();
+    const s = steam.add({ appid: 2, name: 'Shared', playtime: 0, lastPlayed: 0, notOwned: true, achievements: { a: [true, 100, 80] } });
+    local.set(2, { name: 'Shared', schemaMtime: RECENT, statsMtime: RECENT, achievements: { a: [true, 100] } });
+    await engine.sync();
+    expect(await repo.getGame(2)).toMatchObject({ owned: false });
+    s.notOwned = false;
+    s.playtime = 30;
+    await engine.sync();
+    expect(await repo.getGame(2)).toMatchObject({ owned: true, playtime: 30 });
   });
 
   it('converts IDs and icon names', () => {

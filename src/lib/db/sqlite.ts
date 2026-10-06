@@ -54,8 +54,11 @@ const MIGRATIONS = [
   `CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
 ];
 
+/** Columns added after the first release: [table, column, definition]. Added when missing. */
+const ADDED_COLUMNS: [string, string, string][] = [['games', 'owned', 'INTEGER NOT NULL DEFAULT 1']];
+
 const GAME_COLS =
-  'appid, name, playtime, last_played, icon_hash, status, status_manual, unlocked, total, schema_fetched_at, player_fetched_at, global_fetched_at, was_perfect, hidden, pinned, easy_open, effort, rarest_open, rarity_score, last_unlock';
+  'appid, name, playtime, last_played, icon_hash, status, status_manual, unlocked, total, schema_fetched_at, player_fetched_at, global_fetched_at, was_perfect, hidden, pinned, easy_open, effort, rarest_open, rarity_score, last_unlock, owned';
 const ACH_COLS =
   'appid, apiname, name, description, hidden, icon, icongray, achieved, unlocktime, percent, pinned, excluded, note, tags, sort';
 
@@ -65,7 +68,7 @@ function gameParams(g: Game): unknown[] {
   return [
     g.appid, g.name, g.playtime, g.lastPlayed, g.iconHash, g.status, b(g.statusManual), g.unlocked, g.total,
     g.schemaFetchedAt, g.playerFetchedAt, g.globalFetchedAt, b(g.wasPerfect), b(g.hidden), b(g.pinned),
-    g.easyOpen, g.effort, g.rarestOpen, g.rarityScore, g.lastUnlock,
+    g.easyOpen, g.effort, g.rarestOpen, g.rarityScore, g.lastUnlock, b(g.owned),
   ];
 }
 
@@ -86,6 +89,7 @@ function rowToGame(r: any): Game {
     wasPerfect: !!r.was_perfect,
     hidden: !!r.hidden,
     pinned: !!r.pinned,
+    owned: !!r.owned,
     easyOpen: r.easy_open,
     effort: r.effort,
     rarestOpen: r.rarest_open ?? null,
@@ -135,6 +139,10 @@ export class SqliteRepo implements Repo {
     const db = await Database.load(path);
     await db.execute('PRAGMA journal_mode = WAL');
     for (const sql of MIGRATIONS) await db.execute(sql);
+    for (const [table, col, def] of ADDED_COLUMNS) {
+      const cols = await db.select<{ name: string }[]>(`PRAGMA table_info(${table})`);
+      if (!cols.some((c) => c.name === col)) await db.execute(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
+    }
     return new SqliteRepo(db);
   }
 
