@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BUNDLE_MS, buildOverlayData, DEFAULT_OVERLAY, progressStep, ProgressTracker } from '../src/lib/overlay';
+import { BUNDLE_MS, buildOverlayData, DEFAULT_OVERLAY, nextGame, progressStep, ProgressTracker } from '../src/lib/overlay';
 import { emptyGame, type Achievement } from '../src/lib/types';
 
 const game = { ...emptyGame(1, 'Game'), total: 6, unlocked: 1 };
@@ -132,5 +132,23 @@ describe('ProgressTracker', () => {
     expect(tr.tracks(1)).toBe(false);
     expect(tr.recent(1)).toEqual([]);
     expect(tr.update(1, p(['f', 3, 50]), 2)).toEqual([]);
+  });
+});
+
+describe('switching games', () => {
+  it('shows which of several running games this is, only in the full overlay', () => {
+    const d = buildOverlayData(game, list, DEFAULT_OVERLAY, { ...opts, running: [7, 1, 9] });
+    expect(d.switcher).toEqual({ index: 1, count: 3, hotkey: 'Ctrl+Shift+S' });
+    expect(buildOverlayData(game, list, DEFAULT_OVERLAY, { ...opts, running: [1] }).switcher).toBeNull();
+    expect(buildOverlayData(game, list, DEFAULT_OVERLAY, { ...opts, running: [1, 2], mode: 'toast' }).switcher).toBeNull();
+    expect(buildOverlayData(null, [], DEFAULT_OVERLAY, { ...opts, running: [1, 2] }).switcher).toBeNull();
+  });
+
+  it('cycles through the running games', () => {
+    expect(nextGame([7, 1, 9], 1)).toBe(9);
+    expect(nextGame([7, 1, 9], 9)).toBe(7);
+    expect(nextGame([7, 1, 9], null)).toBe(7);
+    expect(nextGame([7, 1, 9], 42)).toBe(7);
+    expect(nextGame([], 1)).toBeNull();
   });
 });

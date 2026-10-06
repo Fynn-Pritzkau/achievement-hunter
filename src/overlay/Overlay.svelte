@@ -51,13 +51,19 @@
       {#if !game}
         <div class="muted">{t('overlay.noGame')}</div>
       {:else}
-        {#if data.showProgress}
+        {#if data.showProgress || data.switcher}
           <div class="head">
             <span class="title">{game.name}</span>
-            <span class="count">{game.unlocked}/{game.total}</span>
+            {#if data.showProgress}<span class="count">{game.unlocked}/{game.total}</span>{/if}
           </div>
-          <div class="bar"><i style:width="{percent}%"></i></div>
         {/if}
+        {#if data.switcher}
+          <div class="switcher">
+            {t('overlay.games', { i: data.switcher.index + 1, n: data.switcher.count })}
+            {#if data.switcher.hotkey}· {t('overlay.switch', { key: data.switcher.hotkey })}{/if}
+          </div>
+        {/if}
+        {#if data.showProgress}<div class="bar"><i style:width="{percent}%"></i></div>{/if}
         {#if data.pinned.length}
           <h3>{t('overlay.pinned')}</h3>
           <ul>{#each data.pinned as a (a.apiname)}{@render item(a)}{/each}</ul>
@@ -109,6 +115,7 @@
   .head { display: flex; gap: 8px; align-items: baseline; }
   .title { flex: 1; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .count { font-variant-numeric: tabular-nums; color: #f0c25a; }
+  .switcher { margin-top: -4px; font-size: 11px; color: #9aa3b2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .bar { height: 4px; border-radius: 2px; background: rgb(255 255 255 / 0.12); overflow: hidden; }
   .bar i { display: block; height: 100%; background: #f0c25a; transition: width 400ms ease-out; }
   .bar.small { flex: 1; height: 3px; }

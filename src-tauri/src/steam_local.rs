@@ -5,6 +5,7 @@
 //! - `appcache/stats/UserGameStatsSchema_<appid>.bin`  achievement list (binary KeyValues)
 //! - `appcache/stats/UserGameStats_<account>_<appid>.bin`  the user's unlocks (binary KeyValues)
 //! - `userdata/<account>/config/localconfig.vdf`  playtime and last played (text KeyValues)
+//! - `steamapps/appmanifest_<appid>.acf`  install folder of a game (text KeyValues)
 //!
 //! Every file is read, parsed and dropped within one call, so memory use stays at
 //! the size of a single file. Values borrow from the file buffer instead of copying.
@@ -14,7 +15,7 @@ use std::{
     collections::HashMap,
     fs,
     io::{BufRead, BufReader},
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::UNIX_EPOCH,
 };
 
@@ -400,6 +401,76 @@ pub fn local_stats_changed(account_id: u32, since: u64) -> Vec<u32> {
         .collect()
 }
 
+// ---------- Game in focus ----------
+
+/// Which of the running games owns the foreground window. Idle tools run games without a window
+/// of their own, so this is the game the user is looking at. Only the exe path of the foreground
+/// process is asked for (no process memory is read); the rest comes from the app manifests.
+#[tauri::command]
+pub fn focused_app_id(candidates: Vec<u32>) -> Option<u32> {
+    let exe = foreground_exe()?;
+    app_for_exe(&exe, &candidates, |p| fs::read_to_string(p).ok())
+}
+
+/// A game's exe lives in `<library>/steamapps/common/<installdir>/…`, and the manifest
+/// `<library>/steamapps/appmanifest_<appid>.acf` names that installdir.
+fn app_for_exe(exe: &Path, candidates: &[u32], read: impl Fn(&Path) -> Option<String>) -> Option<u32> {
+    let parts: Vec<_> = exe.components().collect();
+    let i = parts.windows(2).rposition(|w| {
+        w[0].as_os_str().eq_ignore_ascii_case("steamapps") && w[1].as_os_str().eq_ignore_ascii_case("common")
+    })?;
+    let dir = parts.get(i + 2)?.as_os_str().to_str()?;
+    let steamapps: PathBuf = parts[..=i].iter().collect();
+    candidates.iter().copied().find(|id| {
+        read(&steamapps.join(format!("appmanifest_{id}.acf")))
+            .and_then(|m| manifest_installdir(&m).map(|d| d.eq_ignore_ascii_case(dir)))
+            .unwrap_or(false)
+    })
+}
+
+fn manifest_installdir(acf: &str) -> Option<String> {
+    acf.lines().find_map(|line| {
+        let rest = line.trim().strip_prefix("\"installdir\"")?;
+        Some(rest.trim().trim_matches('"').to_owned())
+    })
+}
+
+#[cfg(windows)]
+fn foreground_exe() -> Option<PathBuf> {
+    use std::{ffi::OsString, os::windows::ffi::OsStringExt};
+    use windows_sys::Win32::{
+        Foundation::CloseHandle,
+        System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION},
+        UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId},
+    };
+    // SAFETY: plain Win32 queries; the handle is closed before returning, the buffer outlives the call.
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if hwnd.is_null() {
+            return None;
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, &mut pid);
+        if pid == 0 || pid == std::process::id() {
+            return None;
+        }
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if process.is_null() {
+            return None;
+        }
+        let mut buf = [0u16; 1024];
+        let mut len = buf.len() as u32;
+        let ok = QueryFullProcessImageNameW(process, PROCESS_NAME_WIN32, buf.as_mut_ptr(), &mut len);
+        CloseHandle(process);
+        (ok != 0).then(|| PathBuf::from(OsString::from_wide(&buf[..len as usize])))
+    }
+}
+
+#[cfg(not(windows))]
+fn foreground_exe() -> Option<PathBuf> {
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -531,5 +602,22 @@ mod tests {
         let v = Kv::Section(langs);
         assert_eq!(localized(Some(&v), "german"), ("Hallo", true));
         assert_eq!(localized(Some(&v), "french"), ("Hi", false));
+    }
+
+    #[test]
+    fn finds_the_game_of_the_foreground_exe() {
+        let manifests = |p: &Path| -> Option<String> {
+            assert!(p.parent()?.ends_with("SteamApps"));
+            match p.file_name()?.to_str()? {
+                "appmanifest_10.acf" => Some("\"AppState\"\n{\n\t\"appid\"\t\t\"10\"\n\t\"installdir\"\t\t\"Idle Game\"\n}".into()),
+                "appmanifest_20.acf" => Some("\"AppState\"\n{\n\t\"installdir\"\t\t\"Big RPG\"\n}".into()),
+                _ => None,
+            }
+        };
+        let exe = Path::new(r"D:\Library\SteamApps\common\big rpg\bin\game.exe");
+        assert_eq!(app_for_exe(exe, &[10, 20], manifests), Some(20));
+        assert_eq!(app_for_exe(exe, &[10], manifests), None);
+        assert_eq!(app_for_exe(Path::new(r"C:\Windows\explorer.exe"), &[10, 20], manifests), None);
+        assert_eq!(app_for_exe(Path::new(r"D:\Library\SteamApps\common"), &[20], manifests), None);
     }
 }

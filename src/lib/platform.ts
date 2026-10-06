@@ -60,23 +60,39 @@ export async function setTrayLabels(open: string, quit: string): Promise<void> {
   await invoke('set_tray_labels', { open, quit });
 }
 
-/** Binds the global overlay hotkey (empty = off). Rejects with a message when the shortcut is invalid or taken. */
-export async function setOverlayHotkey(hotkey: string, corner: OverlayCorner): Promise<void> {
+/**
+ * Binds the global overlay hotkey (empty = off). Rejects with a message when a shortcut is invalid or taken.
+ * The switch hotkey is only bound while the overlay is open.
+ */
+export async function setOverlayHotkey(hotkey: string, switchHotkey: string, corner: OverlayCorner): Promise<void> {
   if (!isTauri) return;
   const { invoke } = await import('@tauri-apps/api/core');
-  await invoke('set_overlay_hotkey', { hotkey: hotkey.trim() || null, corner });
+  await invoke('set_overlay_hotkey', { hotkey: hotkey.trim() || null, switchHotkey: switchHotkey.trim() || null, corner });
+}
+
+/** Which of these games owns the foreground window, from its exe path and Steam's app manifests. */
+export async function focusedAppId(candidates: number[]): Promise<number | null> {
+  if (!isTauri || !candidates.length) return null;
+  const { invoke } = await import('@tauri-apps/api/core');
+  return (await invoke<number | null>('focused_app_id', { candidates })) ?? null;
 }
 
 /**
  * The overlay announces itself when it is ready for data; Rust reports when it was closed,
- * and when the hotkey turned a progress popup into the full overlay.
+ * when the hotkey turned a progress popup into the full overlay, and when the switch hotkey was pressed.
  */
-export async function onOverlayEvents(on: { ready: () => void; closed: () => void; full: () => void }): Promise<void> {
+export async function onOverlayEvents(on: {
+  ready: () => void;
+  closed: () => void;
+  full: () => void;
+  switch: () => void;
+}): Promise<void> {
   if (!isTauri) return;
   const { listen } = await import('@tauri-apps/api/event');
   await listen('overlay:ready', on.ready);
   await listen('overlay:closed', on.closed);
   await listen('overlay:full', on.full);
+  await listen('overlay:switch', on.switch);
 }
 
 /** Opens the overlay as a short popup. False when it is already open. */

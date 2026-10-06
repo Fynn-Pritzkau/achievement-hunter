@@ -4,7 +4,7 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindowBuilder, WindowEvent, Wry,
 };
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 mod steam_local;
 
@@ -94,24 +94,73 @@ struct OverlayState {
     corner: String,
     /// The window is the short progress popup, not the overlay the user opened.
     toast: bool,
+    /// Switches between running games. Bound only while the full overlay is open,
+    /// so it does not take the keys away from games the rest of the time.
+    switch: Option<Shortcut>,
+    switch_bound: bool,
 }
 
 struct Overlay(Mutex<OverlayState>);
 
-/// (Re)binds the global overlay hotkey. None or empty unbinds it.
+fn parse_hotkey(h: Option<&str>) -> Result<Option<Shortcut>, String> {
+    match h.map(str::trim) {
+        Some(h) if !h.is_empty() => h.parse::<Shortcut>().map(Some).map_err(|e| e.to_string()),
+        _ => Ok(None),
+    }
+}
+
+/// (Re)binds the global overlay hotkey and the hotkey that switches games. None or empty unbinds them.
 #[tauri::command]
 fn set_overlay_hotkey(
     app: AppHandle,
     state: State<'_, Overlay>,
     hotkey: Option<String>,
+    switch_hotkey: Option<String>,
     corner: String,
 ) -> Result<(), String> {
-    state.0.lock().unwrap().corner = corner;
+    let toggle = parse_hotkey(hotkey.as_deref())?;
+    let switch = parse_hotkey(switch_hotkey.as_deref())?.filter(|s| Some(*s) != toggle);
+    let rebind = {
+        let mut s = state.0.lock().unwrap();
+        s.corner = corner;
+        s.switch = switch;
+        std::mem::take(&mut s.switch_bound)
+    };
     let shortcuts = app.global_shortcut();
     shortcuts.unregister_all().map_err(|e| e.to_string())?;
-    match hotkey.as_deref().map(str::trim) {
-        Some(h) if !h.is_empty() => shortcuts.register(h).map_err(|e| e.to_string()),
-        _ => Ok(()),
+    if let Some(t) = toggle {
+        shortcuts.register(t).map_err(|e| e.to_string())?;
+    }
+    if rebind {
+        bind_switch(&app, true);
+    }
+    Ok(())
+}
+
+/// Registers or releases the switch hotkey. A hotkey another app holds just stays unbound.
+fn bind_switch(app: &AppHandle, on: bool) {
+    let state = app.state::<Overlay>();
+    let (switch, bound) = {
+        let s = state.0.lock().unwrap();
+        (s.switch, s.switch_bound)
+    };
+    let Some(switch) = switch else { return };
+    if on == bound {
+        return;
+    }
+    let shortcuts = app.global_shortcut();
+    let ok = if on { shortcuts.register(switch).is_ok() } else { shortcuts.unregister(switch).is_ok() };
+    if ok {
+        state.0.lock().unwrap().switch_bound = on;
+    }
+}
+
+fn on_hotkey(app: &AppHandle, shortcut: &Shortcut) {
+    let switch = app.state::<Overlay>().0.lock().unwrap().switch;
+    if switch.as_ref() == Some(shortcut) {
+        let _ = app.emit_to("main", "overlay:switch", ());
+    } else {
+        toggle_overlay(app);
     }
 }
 
@@ -145,12 +194,15 @@ fn toggle_overlay(app: &AppHandle) {
     if let Some(w) = app.get_webview_window(OVERLAY) {
         if was_toast {
             // The hotkey during a popup keeps it open as the full overlay.
+            bind_switch(app, true);
             let _ = app.emit_to("main", "overlay:full", ());
         } else {
             let _ = w.destroy();
         }
     } else if let Err(e) = open_overlay(app) {
         eprintln!("overlay: {e}");
+    } else {
+        bind_switch(app, true);
     }
 }
 
@@ -204,16 +256,16 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, event| {
+                .with_handler(|app, shortcut, event| {
                     if event.state() == ShortcutState::Pressed {
                         // Creating a window inside an event handler deadlocks on Windows: do it off the main thread.
-                        let app = app.clone();
-                        tauri::async_runtime::spawn(async move { toggle_overlay(&app) });
+                        let (app, shortcut) = (app.clone(), *shortcut);
+                        tauri::async_runtime::spawn(async move { on_hotkey(&app, &shortcut) });
                     }
                 })
                 .build(),
         )
-        .manage(Overlay(Mutex::new(OverlayState { corner: "tr".into(), toast: false })))
+        .manage(Overlay(Mutex::new(OverlayState { corner: "tr".into(), toast: false, switch: None, switch_bound: false })))
         .invoke_handler(tauri::generate_handler![
             get_secret,
             set_secret,
@@ -224,7 +276,8 @@ pub fn run() {
             close_overlay_toast,
             steam_local::local_achievements,
             steam_local::local_playtimes,
-            steam_local::local_stats_changed
+            steam_local::local_stats_changed,
+            steam_local::focused_app_id
         ])
         .setup(|app| {
             let open = MenuItem::with_id(app, "open", "Öffnen", true, None::<&str>)?;
@@ -263,6 +316,7 @@ pub fn run() {
             // Tells the main window to stop sending overlay updates.
             WindowEvent::Destroyed if window.label() == OVERLAY => {
                 window.app_handle().state::<Overlay>().0.lock().unwrap().toast = false;
+                bind_switch(window.app_handle(), false);
                 let _ = window.app_handle().emit_to("main", "overlay:closed", ());
             }
             _ => {}

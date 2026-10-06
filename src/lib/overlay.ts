@@ -17,6 +17,8 @@ export const BUNDLE_MS = 4000;
 export interface OverlaySettings {
   /** Global shortcut in accelerator syntax, e.g. "Ctrl+Shift+A". Empty = off. */
   hotkey: string;
+  /** Switches between running games (idle games next to the real one). Only bound while the overlay is open. */
+  switchHotkey: string;
   corner: OverlayCorner;
   showProgress: boolean;
   showPinned: boolean;
@@ -28,6 +30,7 @@ export interface OverlaySettings {
 
 export const DEFAULT_OVERLAY: OverlaySettings = {
   hotkey: 'Ctrl+Shift+A',
+  switchHotkey: 'Ctrl+Shift+S',
   corner: 'tr',
   showProgress: true,
   showPinned: true,
@@ -72,6 +75,8 @@ export interface OverlayData {
   showProgress: boolean;
   /** null = no game with achievements is running. */
   game: { name: string; unlocked: number; total: number } | null;
+  /** Shown when several games with achievements run: which one this is and how to switch. */
+  switcher: { index: number; count: number; hotkey: string } | null;
   /** Achievements whose counter went up recently, newest first. */
   recent: OverlayAch[];
   pinned: OverlayAch[];
@@ -89,9 +94,12 @@ export function buildOverlayData(
     progress?: Map<string, StatProgress>;
     /** Newest first. */
     bumps?: ProgressBump[];
+    /** AppIDs of the running games with achievements, in switching order. */
+    running?: number[];
   },
 ): OverlayData {
   const mode = opts.mode ?? 'full';
+  const running = opts.running ?? [];
   const bumps = new Map((opts.bumps ?? []).map((b) => [b.apiname, b]));
   const toItem = (a: Achievement): OverlayAch => {
     const b = bumps.get(a.apiname);
@@ -126,10 +134,21 @@ export function buildOverlayData(
     mode,
     showProgress: o.showProgress && mode === 'full',
     game: game ? { name: game.name, unlocked: game.unlocked, total: game.total ?? 0 } : null,
+    switcher:
+      game && mode === 'full' && running.length > 1
+        ? { index: Math.max(0, running.indexOf(game.appid)), count: running.length, hotkey: o.switchHotkey.trim() }
+        : null,
     recent: recent.map(toItem),
     pinned: pinned.map(toItem),
     next: next.map(toItem),
   };
+}
+
+/** The game after `current` when switching, wrapping around. */
+export function nextGame(running: number[], current: number | null): number | null {
+  if (!running.length) return null;
+  const i = current == null ? -1 : running.indexOf(current);
+  return running[(i + 1) % running.length];
 }
 
 /**

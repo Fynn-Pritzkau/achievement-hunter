@@ -13,7 +13,7 @@
     await app.saveSettings({
       ...s,
       intervalMinutes: Math.max(15, Number(s.intervalMinutes) || 60),
-      overlay: { ...s.overlay, hotkey: s.overlay.hotkey.trim(), suggestions },
+      overlay: { ...s.overlay, hotkey: s.overlay.hotkey.trim(), switchHotkey: s.overlay.switchHotkey.trim(), suggestions },
     });
     // Stay open when the hotkey didn't work, so the message is seen.
     if (!app.overlayError) onClose();
@@ -51,14 +51,19 @@
             <input bind:value={s.overlay.hotkey} placeholder="Ctrl+Shift+A" spellcheck="false" />
           </label>
           <label>
-            {t('settings.overlayCorner')}
-            <select bind:value={s.overlay.corner}>
-              {#each OVERLAY_CORNERS as c}<option value={c}>{t(`settings.overlayCorner.${c}` as MessageKey)}</option>{/each}
-            </select>
+            {t('settings.overlaySwitchHotkey')}
+            <input bind:value={s.overlay.switchHotkey} placeholder="Ctrl+Shift+S" spellcheck="false" />
           </label>
         </div>
         <span class="small muted">{t('settings.overlayHotkeyHint')}</span>
+        <span class="small muted">{t('settings.overlaySwitchHotkeyHint')}</span>
         {#if app.overlayError}<span class="small error">{t('settings.overlayError', { e: app.overlayError })}</span>{/if}
+        <label>
+          {t('settings.overlayCorner')}
+          <select bind:value={s.overlay.corner}>
+            {#each OVERLAY_CORNERS as c}<option value={c}>{t(`settings.overlayCorner.${c}` as MessageKey)}</option>{/each}
+          </select>
+        </label>
         <label class="check"><input type="checkbox" bind:checked={s.overlay.showProgress} /> {t('settings.overlayProgress')}</label>
         <label class="check"><input type="checkbox" bind:checked={s.overlay.showPinned} /> {t('settings.overlayPinned')}</label>
         <label>

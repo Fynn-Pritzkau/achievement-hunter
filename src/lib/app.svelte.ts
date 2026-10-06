@@ -10,6 +10,7 @@ import {
   runningAppIds,
   saveApiKey,
   closeOverlayToast,
+  focusedAppId,
   openOverlayToast,
   sendOverlayData,
   setOverlayHotkey,
@@ -17,7 +18,7 @@ import {
   steamTransport,
   type AppUpdate,
 } from './platform';
-import { BUNDLE_MS, buildOverlayData, DEFAULT_OVERLAY, ProgressTracker, type OverlaySettings } from './overlay';
+import { BUNDLE_MS, buildOverlayData, DEFAULT_OVERLAY, nextGame, ProgressTracker, type OverlaySettings } from './overlay';
 import { SteamApi } from './steam/api';
 import type { LocalSteam, StatProgress } from './steam/local';
 import { SyncEngine, type SyncProgress, type UnlockEvent } from './sync/engine';
@@ -87,6 +88,10 @@ class AppState {
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
   /** Game of the latest popup; the overlay prefers it when several games run. */
   private overlayAppId: number | null = null;
+  /** Game the full overlay shows: the one in focus when it opened, or the one switched to. Beats overlayAppId. */
+  private overlayChoice: number | null = null;
+  /** Game the overlay shows right now, the starting point for switching. */
+  private overlayShown: number | null = null;
   /** The tour shows this game in the overlay (see tourOverlay). */
   private overlayPreview: number | null = null;
   /** The tour opened the overlay window and closes it again. */
@@ -110,7 +115,7 @@ class AppState {
     await onOverlayEvents({
       ready: () => {
         this.overlayOpen = true;
-        void this.pushOverlay();
+        void this.focusOverlay().then(() => this.pushOverlay());
       },
       closed: () => {
         this.overlayOpen = this.overlayToast = this.previewOpened = false;
@@ -120,6 +125,13 @@ class AppState {
         // The hotkey turned the popup (or the tour's overlay) into the user's own overlay.
         this.overlayToast = this.previewOpened = false;
         this.clearToastTimer();
+        void this.focusOverlay().then(() => this.pushOverlay());
+      },
+      switch: () => {
+        if (!this.overlayOpen || this.overlayToast || this.overlayPreview != null) return;
+        const next = nextGame(this.overlayGames().map((g) => g.appid), this.overlayShown);
+        if (next == null || next === this.overlayShown) return;
+        this.overlayChoice = next;
         void this.pushOverlay();
       },
     });
@@ -200,7 +212,8 @@ class AppState {
 
   private async applyOverlayHotkey() {
     try {
-      await setOverlayHotkey(this.settings.overlay.hotkey, this.settings.overlay.corner);
+      const { hotkey, switchHotkey, corner } = this.settings.overlay;
+      await setOverlayHotkey(hotkey, switchHotkey, corner);
       this.overlayError = null;
     } catch (e) {
       this.overlayError = errorText(e);
@@ -210,10 +223,12 @@ class AppState {
   /** Sends the running game to the overlay: from SQLite and Steam's cache, no API call. */
   private async pushOverlay() {
     const preview = this.overlayPreview;
-    const running = (preview != null ? [preview] : this.runningAppIds)
-      .map((id) => this.games.find((g) => g.appid === id))
-      .filter((g): g is Game => !!g && (g.total ?? 0) > 0);
-    let game = running.find((g) => g.appid === this.overlayAppId) ?? null;
+    const toast = this.overlayToast && preview == null;
+    const running = preview != null ? this.overlayGames([preview]) : this.overlayGames();
+    // The popup shows the game whose counter moved; the full overlay the chosen one,
+    // so an idle game counting up in the background doesn't take it over.
+    const find = (id: number | null) => running.find((g) => g.appid === id);
+    let game = (toast ? null : find(this.overlayChoice)) ?? find(this.overlayAppId) ?? null;
     let list = game ? await this.repo.getAchievements(game.appid) : [];
     if (!game) {
       // Several games running (idle games next to the real one): prefer one with pinned achievements.
@@ -229,11 +244,33 @@ class AppState {
     const data = buildOverlayData(game, list, overlay, {
       locale: uiLanguage,
       revealHidden,
-      mode: this.overlayToast && preview == null ? 'toast' : 'full',
+      mode: toast ? 'toast' : 'full',
       progress,
       bumps: game && preview == null ? this.tracker.recent(game.appid) : [],
+      running: running.map((g) => g.appid),
     });
+    this.overlayShown = game?.appid ?? null;
     await sendOverlayData(data).catch(() => {});
+  }
+
+  /** Running games the overlay can show (those with achievements), in a stable order. */
+  private overlayGames(ids = this.runningAppIds): Game[] {
+    return ids
+      .map((id) => this.games.find((g) => g.appid === id))
+      .filter((g): g is Game => !!g && (g.total ?? 0) > 0);
+  }
+
+  /**
+   * The user opened the overlay: show the game in the foreground window. Idle games run next to
+   * the real one, and Steam can't tell them apart. Not found (e.g. the app itself is in front):
+   * keep the last choice.
+   */
+  private async focusOverlay() {
+    if (this.overlayToast || this.overlayPreview != null) return;
+    const running = this.overlayGames().map((g) => g.appid);
+    if (running.length < 2) return;
+    const focused = await focusedAppId(running).catch(() => null);
+    if (focused != null) this.overlayChoice = focused;
   }
 
   /**
