@@ -63,10 +63,15 @@ describe('buildOverlayData', () => {
       { apiname: 'pin', delta: 2, at: 3, notable: true },
     ];
     const d = buildOverlayData(game, list, DEFAULT_OVERLAY, { ...opts, progress, bumps });
-    expect(names(d.recent)).toEqual(['rare', 'pin']);
+    expect(names(d.recent)).toEqual(['rare']);
     expect(d.recent[0]).toMatchObject({ progress: { current: 3, max: 10 }, bump: { delta: 1, at: 5 } });
-    expect(d.pinned).toEqual([]);
+    // Pinned ones keep their section, with the bump.
+    expect(names(d.pinned)).toEqual(['pin']);
+    expect(d.pinned[0].bump).toEqual({ delta: 2, at: 3 });
     expect(names(d.next)).toEqual(['easy', 'secret']);
+    const noPins = buildOverlayData(game, list, { ...DEFAULT_OVERLAY, showPinned: false }, { ...opts, progress, bumps });
+    expect(names(noPins.recent)).toEqual(['rare', 'pin']);
+    expect(noPins.pinned).toEqual([]);
     expect(d.next[0].progress).toEqual({ current: 7, max: 8 });
 
     const toast = buildOverlayData(game, list, DEFAULT_OVERLAY, { ...opts, progress, bumps, mode: 'toast' });

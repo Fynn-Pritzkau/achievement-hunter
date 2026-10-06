@@ -33,6 +33,7 @@
   });
 
   function tourStep(s: TourStep) {
+    void app.tourOverlay(s.overlay ? (tour?.game ?? null) : null);
     if (!s.view) return;
     if ('game' in s.view) openAppId = tour?.game ?? null;
     else {
@@ -42,6 +43,7 @@
   }
 
   function endTour() {
+    void app.tourOverlay(null);
     if (tour) ({ listId, openAppId } = tour.back);
     tour = null;
     app.touring = false;

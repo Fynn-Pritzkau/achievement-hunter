@@ -107,12 +107,15 @@ export function buildOverlayData(
     };
   };
   const open = game ? list.filter((a) => !a.achieved && !a.excluded) : [];
-  const byName = new Map(open.map((a) => [a.apiname, a]));
+  // Pinned achievements are the user's focus: the full overlay always keeps them in their own
+  // section (a fresh bump shows there too). The popup only lists what just moved.
+  const pinned = mode === 'full' && o.showPinned ? open.filter((a) => a.pinned) : [];
+  const inPinned = new Set(pinned.map((a) => a.apiname));
+  const byName = new Map(open.filter((a) => !inPinned.has(a.apiname)).map((a) => [a.apiname, a]));
   const recent = (opts.bumps ?? []).flatMap((b) => byName.get(b.apiname) ?? []).slice(0, MAX_RECENT);
-  // Each achievement shows once: in "recent" when it just moved, otherwise where it belongs.
+  // Each achievement shows once: pinned, else in "recent" when it just moved, else where it belongs.
   const inRecent = new Set(recent.map((a) => a.apiname));
   const rest = mode === 'toast' ? [] : open.filter((a) => !inRecent.has(a.apiname));
-  const pinned = o.showPinned ? rest.filter((a) => a.pinned) : [];
   const next = rest
     .filter((a) => !a.pinned && a.percent != null)
     .sort((a, b) => b.percent! - a.percent!)

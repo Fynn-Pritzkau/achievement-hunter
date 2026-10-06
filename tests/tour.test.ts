@@ -13,6 +13,9 @@ describe('tour', () => {
     expect(browser).not.toContain('overlay');
     expect(browser).not.toContain('achievement');
     expect(browser).toContain('lists');
+    // The overlay step shows the tour game, so it needs one.
+    expect(tourSteps(false, true).map((s) => s.id)).not.toContain('overlay');
+    expect(TOUR_STEPS.find((s) => s.id === 'overlay')).toMatchObject({ overlay: true, desktopOnly: true });
   });
 
   it('has a title and text for every step', () => {

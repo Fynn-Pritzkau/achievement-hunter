@@ -87,6 +87,10 @@ class AppState {
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
   /** Game of the latest popup; the overlay prefers it when several games run. */
   private overlayAppId: number | null = null;
+  /** The tour shows this game in the overlay (see tourOverlay). */
+  private overlayPreview: number | null = null;
+  /** The tour opened the overlay window and closes it again. */
+  private previewOpened = false;
   private tracker = new ProgressTracker();
   private engine: SyncEngine | null = null;
   private local: LocalSteam | null = null;
@@ -109,11 +113,12 @@ class AppState {
         void this.pushOverlay();
       },
       closed: () => {
-        this.overlayOpen = this.overlayToast = false;
+        this.overlayOpen = this.overlayToast = this.previewOpened = false;
         this.clearToastTimer();
       },
       full: () => {
-        this.overlayToast = false;
+        // The hotkey turned the popup (or the tour's overlay) into the user's own overlay.
+        this.overlayToast = this.previewOpened = false;
         this.clearToastTimer();
         void this.pushOverlay();
       },
@@ -204,21 +209,60 @@ class AppState {
 
   /** Sends the running game to the overlay: from SQLite and Steam's cache, no API call. */
   private async pushOverlay() {
-    const running = this.runningAppIds
+    const preview = this.overlayPreview;
+    const running = (preview != null ? [preview] : this.runningAppIds)
       .map((id) => this.games.find((g) => g.appid === id))
       .filter((g): g is Game => !!g && (g.total ?? 0) > 0);
-    const game = running.find((g) => g.appid === this.overlayAppId) ?? running[0] ?? null;
-    const list = game ? await this.repo.getAchievements(game.appid) : [];
+    let game = running.find((g) => g.appid === this.overlayAppId) ?? null;
+    let list = game ? await this.repo.getAchievements(game.appid) : [];
+    if (!game) {
+      // Several games running (idle games next to the real one): prefer one with pinned achievements.
+      for (const g of running) {
+        const l = await this.repo.getAchievements(g.appid);
+        const pins = l.some((a) => a.pinned && !a.achieved);
+        if (!game || pins) [game, list] = [g, l];
+        if (pins) break;
+      }
+    }
     const progress = game ? await this.localProgress(game.appid) : new Map();
     const { overlay, uiLanguage, revealHidden } = this.settings;
     const data = buildOverlayData(game, list, overlay, {
       locale: uiLanguage,
       revealHidden,
-      mode: this.overlayToast ? 'toast' : 'full',
+      mode: this.overlayToast && preview == null ? 'toast' : 'full',
       progress,
-      bumps: game ? this.tracker.recent(game.appid) : [],
+      bumps: game && preview == null ? this.tracker.recent(game.appid) : [],
     });
     await sendOverlayData(data).catch(() => {});
+  }
+
+  /**
+   * The tour shows the real overlay with this game (null = stop). It opens the window if needed
+   * and closes it again afterwards; an overlay the user had open stays open.
+   */
+  async tourOverlay(appid: number | null) {
+    if (appid === this.overlayPreview) return;
+    this.overlayPreview = appid;
+    if (appid != null) {
+      if (this.overlayToast) {
+        // A progress popup is open: keep it for the tour, its timer must not close it.
+        this.clearToastTimer();
+        this.overlayToast = false;
+        this.previewOpened = true;
+      } else if (!this.overlayOpen) {
+        const opened = await openOverlayToast().catch(() => false);
+        // The tour moved on while the window opened.
+        if (opened && this.overlayPreview == null) return void (await closeOverlayToast().catch(() => {}));
+        this.previewOpened ||= opened;
+      }
+      // A window that is still loading asks for its data with overlay:ready.
+      if (this.overlayOpen) await this.pushOverlay();
+    } else if (this.previewOpened) {
+      this.previewOpened = false;
+      await closeOverlayToast().catch(() => {});
+    } else if (this.overlayOpen) {
+      await this.pushOverlay();
+    }
   }
 
   /** A running game was synced: look for counters that went up and show them. */
@@ -384,6 +428,8 @@ class AppState {
   async updateAchievements(game: Game, list: Achievement[]) {
     await this.repo.saveAchievements(game.appid, list);
     await this.updateGame({ ...game, ...aggregate(list) });
+    // Pins and exclusions show in the overlay right away.
+    if (this.overlayOpen) void this.pushOverlay();
   }
 }
 

@@ -12,6 +12,8 @@ export interface TourStep {
   view?: { list: string } | { game: true };
   /** Only in the desktop app (overlay, tray). */
   desktopOnly?: boolean;
+  /** Shows the real overlay with the tour game while the step is open. */
+  overlay?: boolean;
 }
 
 export const TOUR_STEPS: TourStep[] = [
@@ -23,11 +25,12 @@ export const TOUR_STEPS: TourStep[] = [
   { id: 'gameHeader', target: 'game-actions', view: { game: true } },
   { id: 'gameFilters', target: 'game-filters', view: { game: true } },
   { id: 'achievement', target: 'achievement', view: { game: true } },
+  { id: 'overlay', view: { game: true }, desktopOnly: true, overlay: true },
   { id: 'live', target: 'live', view: { list: 'all' } },
   { id: 'history', target: 'history', view: { list: 'history' } },
   { id: 'milestones', target: 'milestones', view: { list: 'appAchievements' } },
   { id: 'sync', target: 'sync', view: { list: 'all' } },
-  { id: 'overlay', target: 'settings', view: { list: 'all' }, desktopOnly: true },
+  { id: 'settings', target: 'settings', view: { list: 'all' } },
   { id: 'done', target: 'tour', view: { list: 'all' } },
 ];
 

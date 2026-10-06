@@ -58,13 +58,13 @@
           </div>
           <div class="bar"><i style:width="{percent}%"></i></div>
         {/if}
-        {#if data.recent.length}
-          <h3>{data.mode === 'toast' ? game.name : t('overlay.progress')}</h3>
-          <ul>{#each data.recent as a (a.apiname)}{@render item(a)}{/each}</ul>
-        {/if}
         {#if data.pinned.length}
           <h3>{t('overlay.pinned')}</h3>
           <ul>{#each data.pinned as a (a.apiname)}{@render item(a)}{/each}</ul>
+        {/if}
+        {#if data.recent.length}
+          <h3>{data.mode === 'toast' ? game.name : t('overlay.progress')}</h3>
+          <ul>{#each data.recent as a (a.apiname)}{@render item(a)}{/each}</ul>
         {/if}
         {#if data.next.length}
           <h3>{t('overlay.next')}</h3>
