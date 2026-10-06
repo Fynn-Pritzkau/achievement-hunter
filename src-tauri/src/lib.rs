@@ -116,8 +116,9 @@ fn set_overlay_hotkey(
 }
 
 /// Opens the overlay as a short popup. False when it is already open (then the UI just updates it).
+/// Async on purpose: creating a window in a synchronous command deadlocks the app on Windows.
 #[tauri::command]
-fn open_overlay_toast(app: AppHandle, state: State<'_, Overlay>) -> Result<bool, String> {
+async fn open_overlay_toast(app: AppHandle, state: State<'_, Overlay>) -> Result<bool, String> {
     if app.get_webview_window(OVERLAY).is_some() {
         return Ok(false);
     }
@@ -128,12 +129,13 @@ fn open_overlay_toast(app: AppHandle, state: State<'_, Overlay>) -> Result<bool,
 
 /// Closes the popup, unless the user turned it into the full overlay with the hotkey meanwhile.
 #[tauri::command]
-fn close_overlay_toast(app: AppHandle, state: State<'_, Overlay>) {
+async fn close_overlay_toast(app: AppHandle, state: State<'_, Overlay>) -> Result<(), String> {
     if state.0.lock().unwrap().toast {
         if let Some(w) = app.get_webview_window(OVERLAY) {
             let _ = w.destroy();
         }
     }
+    Ok(())
 }
 
 /// The overlay only exists while it is visible, so a closed overlay costs no memory.
@@ -204,7 +206,9 @@ pub fn run() {
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _shortcut, event| {
                     if event.state() == ShortcutState::Pressed {
-                        toggle_overlay(app);
+                        // Creating a window inside an event handler deadlocks on Windows: do it off the main thread.
+                        let app = app.clone();
+                        tauri::async_runtime::spawn(async move { toggle_overlay(&app) });
                     }
                 })
                 .build(),
