@@ -31,6 +31,22 @@ describe('SyncEngine', () => {
     expect(res.unlocks).toEqual([]);
   });
 
+  it('fills the estimate numbers of games stored before them, without a call and only once', async () => {
+    const { steam, repo, engine } = setup();
+    steam.add({ appid: 1, name: 'Alpha', playtime: 120, lastPlayed: RECENT, achievements: { a: [true, 100, 80], b: [false, 0, 30] } });
+    await engine.sync();
+    const synced = (await repo.getGame(1))!;
+    expect(synced.paceDone).toBe(1);
+    // As if stored by 1.0.
+    await repo.saveGame({ ...synced, paceDone: null, paceLeft: 0, paceTop: 0 });
+    steam.calls = [];
+    const filled = await engine.backfillPace();
+    expect(filled.map((g) => g.appid)).toEqual([1]);
+    expect(await repo.getGame(1)).toMatchObject({ paceDone: synced.paceDone, paceLeft: synced.paceLeft, playtime: 120 });
+    expect(steam.calls).toHaveLength(0);
+    expect(await engine.backfillPace()).toEqual([]);
+  });
+
   it('second sync without playing costs exactly one API call', async () => {
     const { steam, engine } = setup();
     steam.add({ appid: 1, name: 'Alpha', playtime: 120, lastPlayed: RECENT, achievements: { a: [true, 100, 80], b: [false, 0, 30] } });

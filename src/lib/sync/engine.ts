@@ -12,6 +12,7 @@ import {
   type Snapshot,
 } from '../types';
 import { dayKey } from '../util';
+import { paceAggregate } from '../estimate';
 import { aggregate, applyGlobal, applyPlayer, mergeSchema } from './merge';
 import { planSync, type SyncTask } from './plan';
 import { decideStatus } from './status';
@@ -354,6 +355,33 @@ export class SyncEngine {
     }
     await repo.setMeta('hiddenDescBackfill', String(this.now()));
     return n;
+  }
+
+  /**
+   * Computes the pace aggregates (estimate.ts) for games stored before they existed, from the
+   * stored achievements. No API call. Returns the games that changed.
+   */
+  backfillPace(): Promise<Game[]> {
+    return this.track(this.doBackfillPace());
+  }
+
+  private async doBackfillPace(): Promise<Game[]> {
+    const { repo } = this.opts;
+    const out: Game[] = [];
+    // One game at a time, so only one achievement list is in memory.
+    for (const g of await repo.getGames()) {
+      if (this.stopped) break;
+      if (!g.total || g.paceDone != null) continue;
+      const pace = paceAggregate(await repo.getAchievements(g.appid));
+      // Don't write while a sync might be saving the same game. If it did, it computed the numbers itself.
+      while (this.running || this.localRunning) await Promise.allSettled([this.running, this.localRunning]);
+      const cur = await repo.getGame(g.appid);
+      if (!cur || cur.paceDone != null) continue;
+      const next = { ...cur, ...pace };
+      await repo.saveGame(next);
+      out.push(next);
+    }
+    return out;
   }
 
   private async runTasks(

@@ -1,7 +1,8 @@
 <script lang="ts">
   import { app } from '../lib/app.svelte';
   import { t, type MessageKey } from '../lib/i18n.svelte';
-  import { SMART_LISTS, SORTS, effortLevel, estimateLeftMin, matchesQuery, sortGames, type SortKey } from '../lib/lists';
+  import { estimateLeft, fmtRange } from '../lib/estimate';
+  import { SMART_LISTS, SORTS, effortLevel, matchesQuery, sortGames, type SortKey } from '../lib/lists';
   import { completion, isPerfect } from '../lib/types';
   import { capsuleUrls, fmtDate, fmtHours, fmtPercent } from '../lib/util';
 
@@ -74,7 +75,11 @@
               {#if g.easyOpen}<span class="chip accent" title={t('library.easyHint')}>{t('library.easy', { n: g.easyOpen })}</span>{/if}
               {#if g.rarestOpen != null && !isPerfect(g)}<span title={t('library.rarestHint')}>{t('library.rarest', { p: fmtPercent(g.rarestOpen) })}</span>{/if}
               {#if effortLevel(g)}{@const lvl = effortLevel(g)!}<span class="chip effort {lvl}" title={t('effort.hint', { n: Math.round(g.effort) })}>{t(`effort.${lvl}`)}</span>{/if}
-              {#if estimateLeftMin(g) != null}<span title={t('library.leftHint')}>{t('library.left', { t: fmtHours(estimateLeftMin(g)!) })}</span>{/if}
+              {#if estimateLeft(g)}{@const e = estimateLeft(g)!}
+                <span title={t('library.leftHint', { t: fmtHours(e.min) }) + (e.skipped ? '\n' + t('library.leftSkippedHint', { n: e.skipped }) : '')}>
+                  {t('library.left', { t: fmtRange(e) })}{#if e.skipped}{' '}{t('library.leftSkipped', { n: e.skipped })}{/if}
+                </span>
+              {/if}
               <span>{fmtHours(g.playtime)}</span>
               {#if g.lastPlayed}<span>{fmtDate(g.lastPlayed)}</span>{/if}
             </div>

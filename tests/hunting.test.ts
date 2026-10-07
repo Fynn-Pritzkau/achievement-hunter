@@ -38,20 +38,13 @@ describe('effortLevel', () => {
 });
 
 describe('estimateLeftMin', () => {
-  it('scales the pace so far by the open rarity points', () => {
-    // 600 min for 100 points → 6 min per point; 50 points open → 300 min.
-    expect(estimateLeftMin(game({ total: 10, unlocked: 5, playtime: 600, rarityScore: 100, effort: 50 }))).toBe(300);
-  });
-  it('needs a few unlocks and an hour of play', () => {
-    expect(estimateLeftMin(game({ total: 10, unlocked: 2, playtime: 600, rarityScore: 10, effort: 5 }))).toBeNull();
-    expect(estimateLeftMin(game({ total: 10, unlocked: 5, playtime: 30, rarityScore: 10, effort: 5 }))).toBeNull();
-    expect(estimateLeftMin(game({ total: 10, unlocked: 10, playtime: 600, rarityScore: 10, effort: 0 }))).toBeNull();
-  });
   it('feeds the "next perfect" list', () => {
     const closest = SMART_LISTS.find((l) => l.id === 'closest')!;
     const ctx = { runningAppIds: [], now: 0 };
-    expect(closest.filter(game({ total: 10, unlocked: 5, playtime: 600, rarityScore: 100, effort: 50 }), ctx)).toBe(true);
-    expect(closest.filter(game({ total: 10, unlocked: 5, playtime: 6000, rarityScore: 100, effort: 50 }), ctx)).toBe(false);
+    // 600 min for 10 weight → 60 min per weight; 5 open → 300 min.
+    expect(estimateLeftMin(game({ total: 10, unlocked: 5, playtime: 600, paceDone: 10, paceLeft: 5, paceTop: 1 }))).toBe(300);
+    expect(closest.filter(game({ total: 10, unlocked: 5, playtime: 600, paceDone: 10, paceLeft: 5, paceTop: 1 }), ctx)).toBe(true);
+    expect(closest.filter(game({ total: 10, unlocked: 5, playtime: 6000, paceDone: 10, paceLeft: 5, paceTop: 1 }), ctx)).toBe(false);
   });
 });
 

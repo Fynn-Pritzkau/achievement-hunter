@@ -100,6 +100,27 @@ describe('schema migrations', () => {
     expect(list[0].manualTags).toBeUndefined();
   });
 
+  it('upgrades a 1.0 database: estimate numbers start unknown and round-trip after that', async () => {
+    const dir = tempDir();
+    const raw = sqlite(join(dir, 'app.db'));
+    // The schema 1.0 shipped: today's minus the estimate columns, at version 1.
+    await migrate(adapter(raw));
+    for (const c of ['pace_done', 'pace_left', 'pace_top', 'skip_open']) raw.exec(`ALTER TABLE games DROP COLUMN ${c}`);
+    raw.exec('PRAGMA user_version = 1');
+    raw.exec(`INSERT INTO games (appid, name, total, unlocked) VALUES (10, 'Old Game', 2, 1)`);
+    const backups: number[] = [];
+    const v1 = await SqliteRepo.from(adapter(raw), async (from) => {
+      backups.push(from);
+      return join(dir, 'b1.db');
+    });
+    expect(backups).toEqual([1]);
+    expect(v1.schemaVersion).toBe(SCHEMA_VERSION);
+    const g = (await v1.getGame(10))!;
+    expect(g).toMatchObject({ paceDone: null, paceLeft: 0, paceTop: 0, skipOpen: 0, name: 'Old Game' });
+    await v1.saveGame({ ...g, paceDone: 3.5, paceLeft: 2.25, paceTop: 1.5, skipOpen: 1 });
+    expect(await v1.getGame(10)).toMatchObject({ paceDone: 3.5, paceLeft: 2.25, paceTop: 1.5, skipOpen: 1 });
+  });
+
   it('does nothing (and copies nothing) when the database is current', async () => {
     const db = adapter(sqlite(':memory:'));
     await migrate(db);

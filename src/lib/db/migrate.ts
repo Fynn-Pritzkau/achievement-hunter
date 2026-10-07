@@ -79,6 +79,14 @@ const MIGRATIONS: Migration[] = [
     await addColumn(db, 'achievements', 'manual_tags', 'TEXT');
     await addColumn(db, 'achievements', 'added_at', 'INTEGER NOT NULL DEFAULT 0');
   },
+  // 2: aggregates for the "to 100 %" estimate. pace_done NULL = not computed yet; the engine
+  // fills it from the stored achievements on the next start (SyncEngine.backfillPace).
+  async (db) => {
+    await addColumn(db, 'games', 'pace_done', 'REAL');
+    await addColumn(db, 'games', 'pace_left', 'REAL NOT NULL DEFAULT 0');
+    await addColumn(db, 'games', 'pace_top', 'REAL NOT NULL DEFAULT 0');
+    await addColumn(db, 'games', 'skip_open', 'INTEGER NOT NULL DEFAULT 0');
+  },
 ];
 
 /** The schema version this build writes. */

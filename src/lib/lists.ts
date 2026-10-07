@@ -1,3 +1,4 @@
+import { estimateLeft } from './estimate';
 import { completion, isPerfect, type Game } from './types';
 
 export interface SmartList {
@@ -57,14 +58,8 @@ export function effortLevel(g: Pick<Game, 'unlocked' | 'total' | 'effort'>): Eff
   return g.effort < 50 ? 'easy' : g.effort < 300 ? 'medium' : g.effort < 1500 ? 'hard' : 'brutal';
 }
 
-/**
- * Rough minutes to 100 %: the player's pace in this game so far (minutes per rarity point)
- * times the rarity points still open. Null when there is too little to go on.
- */
-export function estimateLeftMin(g: Pick<Game, 'unlocked' | 'total' | 'effort' | 'playtime' | 'rarityScore'>): number | null {
-  if (!g.total || isPerfect(g) || g.unlocked < 3 || g.playtime < 60) return null;
-  return Math.round((g.playtime / Math.max(g.rarityScore, 1)) * g.effort);
-}
+/** Most likely minutes to 100 % (see estimate.ts), for sorting and the "closest" list. */
+export const estimateLeftMin = (g: Parameters<typeof estimateLeft>[0]): number | null => estimateLeft(g)?.min ?? null;
 
 const COMPARE: Record<SortKey, (a: Game, b: Game) => number> = {
   recent: (a, b) => b.lastPlayed - a.lastPlayed,

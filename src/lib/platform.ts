@@ -33,8 +33,10 @@ export async function openRepo(): Promise<Repo> {
   if (isTauri) {
     const { SqliteRepo } = await import('./db/sqlite');
     const { appConfigDir, join } = await import('@tauri-apps/api/path');
+    // Dev builds keep their own database, so testing a migration never touches the installed app's.
+    const name = import.meta.env.DEV ? 'achievement-hunter.dev' : 'achievement-hunter';
     // Next to the database (tauri-plugin-sql keeps it in the app config dir).
-    return SqliteRepo.open(undefined, async (from) => join(await appConfigDir(), `achievement-hunter.before-upgrade-v${from}.db`));
+    return SqliteRepo.open(`sqlite:${name}.db`, async (from) => join(await appConfigDir(), `${name}.before-upgrade-v${from}.db`));
   }
   return new LocalStorageRepo();
 }

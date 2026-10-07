@@ -549,6 +549,10 @@ class AppState {
     this.scheduler.start();
     void this.sync();
     void this.engine.backfillHiddenDescriptions().catch(() => {});
+    void this.engine
+      .backfillPace()
+      .then((games) => games.forEach((g) => this.upsertLocal(g)))
+      .catch((e) => log.warn('Pace backfill', e));
   }
 
   async sync(force = false) {
@@ -632,11 +636,11 @@ class AppState {
     const now = Date.now();
     this.appAchievements = { ...this.appAchievements, ...Object.fromEntries(fresh.map((a) => [a.id, now])) };
     await this.repo.setMeta('appAchievements', JSON.stringify(this.appAchievements));
+    if (this.settings.milestoneSound) playMilestoneSound();
     if (!this.settings.notifyUnlocks) return;
     // The first sync can earn a whole shelf at once: one summary instead of a burst.
     if (fresh.length > 2) void notify(t('appAchs.notifyMany', { n: fresh.length }), fresh.map((a) => a.icon).join(' '));
     else for (const a of fresh) void notify(t('appAchs.notify', { icon: a.icon }), t(`appAch.${a.id}` as MessageKey));
-    if (this.settings.milestoneSound) playMilestoneSound();
   }
 
   /** A game started while the app runs: remember where it stood, warn about missables. */

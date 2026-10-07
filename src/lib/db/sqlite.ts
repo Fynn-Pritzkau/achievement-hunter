@@ -4,7 +4,7 @@ import { migrate, type SqlDb } from './migrate';
 import { KEEP_META, type Repo } from './repo';
 
 const GAME_COLS =
-  'appid, name, playtime, last_played, icon_hash, status, status_manual, unlocked, total, schema_fetched_at, player_fetched_at, global_fetched_at, was_perfect, hidden, pinned, easy_open, effort, rarest_open, rarity_score, last_unlock, owned, pinned_open';
+  'appid, name, playtime, last_played, icon_hash, status, status_manual, unlocked, total, schema_fetched_at, player_fetched_at, global_fetched_at, was_perfect, hidden, pinned, easy_open, effort, rarest_open, rarity_score, last_unlock, owned, pinned_open, pace_done, pace_left, pace_top, skip_open';
 const ACH_COLS =
   'appid, apiname, name, description, hidden, icon, icongray, achieved, unlocktime, percent, pinned, excluded, note, tags, sort, manual_tags, added_at';
 
@@ -15,6 +15,7 @@ function gameParams(g: Game): unknown[] {
     g.appid, g.name, g.playtime, g.lastPlayed, g.iconHash, g.status, b(g.statusManual), g.unlocked, g.total,
     g.schemaFetchedAt, g.playerFetchedAt, g.globalFetchedAt, b(g.wasPerfect), b(g.hidden), b(g.pinned),
     g.easyOpen, g.effort, g.rarestOpen, g.rarityScore, g.lastUnlock, b(g.owned), g.pinnedOpen ?? 0,
+    g.paceDone ?? null, g.paceLeft ?? 0, g.paceTop ?? 0, g.skipOpen ?? 0,
   ];
 }
 
@@ -42,6 +43,10 @@ function rowToGame(r: any): Game {
     rarityScore: r.rarity_score,
     lastUnlock: r.last_unlock,
     pinnedOpen: r.pinned_open ?? 0,
+    paceDone: r.pace_done ?? null,
+    paceLeft: r.pace_left ?? 0,
+    paceTop: r.pace_top ?? 0,
+    skipOpen: r.skip_open ?? 0,
   };
 }
 

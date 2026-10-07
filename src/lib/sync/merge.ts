@@ -1,3 +1,4 @@
+import { paceAggregate } from '../estimate';
 import { autoTags } from '../tags';
 import type { Achievement, Game, PlayerAchievement, SchemaAchievement } from '../types';
 
@@ -70,7 +71,10 @@ export function applyGlobal(list: Achievement[], percents: Map<string, number>):
 /** Recomputes the per-game numbers the lists sort and filter by. */
 export function aggregate(
   list: Achievement[],
-): Pick<Game, 'unlocked' | 'total' | 'easyOpen' | 'effort' | 'rarestOpen' | 'rarityScore' | 'lastUnlock' | 'pinnedOpen'> {
+): Pick<
+  Game,
+  'unlocked' | 'total' | 'easyOpen' | 'effort' | 'rarestOpen' | 'rarityScore' | 'lastUnlock' | 'pinnedOpen' | 'paceDone' | 'paceLeft' | 'paceTop' | 'skipOpen'
+> {
   let unlocked = 0;
   let total = 0;
   let easyOpen = 0;
@@ -106,5 +110,6 @@ export function aggregate(
     rarityScore: Math.round(rarityScore * 10) / 10,
     lastUnlock,
     pinnedOpen,
+    ...paceAggregate(list),
   };
 }

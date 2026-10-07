@@ -6,7 +6,8 @@
   import { isMessageKey, t } from '../lib/i18n.svelte';
   import { autoTags } from '../lib/tags';
   import { cleanTag, manualTags } from '../lib/sync/merge';
-  import { effortLevel, estimateLeftMin } from '../lib/lists';
+  import { effortLevel } from '../lib/lists';
+  import { estimateLeft, fmtRange } from '../lib/estimate';
   import type { StatProgress } from '../lib/steam/local';
   import { tick } from 'svelte';
   import Timeline from './Timeline.svelte';
@@ -126,7 +127,7 @@
   });
 
   const effort = $derived(effortLevel(game));
-  const left = $derived(estimateLeftMin(game));
+  const left = $derived(estimateLeft(game));
 
   // Snapshots are only needed to date the 100 %, so only perfect games load them.
   let snapshots = $state<Snapshot[]>([]);
@@ -177,7 +178,10 @@
       {#if game.lastPlayed}<span>{t('game.lastPlayed', { date: fmtDate(game.lastPlayed) ?? '' })}</span>{/if}
       <span>{t('game.rarityPoints', { n: Math.round(game.rarityScore) })}</span>
       {#if effort}<span class="chip effort {effort}" title={t('effort.hint', { n: Math.round(game.effort) })}>{t(`effort.${effort}`)}</span>{/if}
-      {#if left != null}<span title={t('library.leftHint')}>{t('library.left', { t: fmtHours(left) })}</span>{/if}
+      {#if left}
+        <span title={t('library.leftHint', { t: fmtHours(left.min) })}>{t('library.left', { t: fmtRange(left) })}</span>
+        {#if left.skipped}<span class="chip" title={t('library.leftSkippedHint', { n: left.skipped })}>{t('library.leftSkipped', { n: left.skipped })}</span>{/if}
+      {/if}
       {#if perfectIn}
         <span title={t(perfectIn.exact ? 'game.perfectInHint' : 'game.perfectInMaxHint')}>
           {t(perfectIn.exact ? 'game.perfectIn' : 'game.perfectInMax', { t: fmtHours(perfectIn.min) })}

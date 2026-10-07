@@ -88,6 +88,14 @@ export interface Game {
   lastUnlock: number;
   /** Pinned (focus) achievements that are still open. */
   pinnedOpen: number;
+  /** Time weights of the unlocked achievements for the "to 100 %" estimate (estimate.ts). null = not computed yet. */
+  paceDone: number | null;
+  /** Time weights of the open achievements, without online/co-op ones. */
+  paceLeft: number;
+  /** Largest single weight among those, to tell when one achievement dominates. */
+  paceTop: number;
+  /** Open online/co-op achievements: their time depends on other players, so they aren't estimated. */
+  skipOpen: number;
 }
 
 export interface Snapshot {
@@ -122,6 +130,10 @@ export function emptyGame(appid: number, name: string): Game {
     rarityScore: 0,
     lastUnlock: 0,
     pinnedOpen: 0,
+    paceDone: null,
+    paceLeft: 0,
+    paceTop: 0,
+    skipOpen: 0,
   };
 }
 
