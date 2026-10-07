@@ -131,7 +131,12 @@
         <button class="ghost small" data-tour="settings" onclick={onSettings} title={t('settings.title')}>⚙</button>
       </div>
     {/if}
-    {#if app.error}<div class="small error">{app.error}</div>{/if}
+    {#if app.error}
+      <div class="small error">
+        {app.error}
+        {#if app.authError}<button class="ghost small fix" onclick={onSettings}>{t('sidebar.fixKey')}</button>{/if}
+      </div>
+    {/if}
   </footer>
 </aside>
 
@@ -183,5 +188,6 @@
   .row span { flex: 1; }
   .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .error { color: var(--warn); }
+  .fix { color: var(--accent); padding: 0 2px; }
   .update { background: var(--accent-soft); color: var(--accent); border-color: transparent; text-align: left; }
 </style>

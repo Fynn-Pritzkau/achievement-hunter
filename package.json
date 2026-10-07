@@ -1,6 +1,7 @@
 {
   "name": "achievement-hunter",
   "private": true,
+  "license": "GPL-3.0-only",
   "version": "0.10.1",
   "type": "module",
   "scripts": {

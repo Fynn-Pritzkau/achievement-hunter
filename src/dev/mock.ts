@@ -117,6 +117,15 @@ export async function checkForUpdate(): Promise<AppUpdate | null> {
   };
 }
 
+export const systemInfo = async () => ({ os: `Mock (${scenario})`, steamInstalled: scenario !== 'nolocal' });
+
+/** Saved backups stay in memory (`mock.backups` in the console); nothing is downloaded. */
+export const backups: { name: string; contents: string }[] = [];
+export async function saveBackupFile(name: string, contents: string) {
+  backups.push({ name, contents });
+  return `C:\\Users\\mock\\Downloads\\${name}`;
+}
+
 export async function notify(title: string, body: string) {
   world.notify(title, body);
 }

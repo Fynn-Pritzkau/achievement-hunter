@@ -7,8 +7,12 @@ import {
   onOverlayEvents,
   openLocalSteam,
   openRepo,
+  readLog,
   runningAppIds,
   saveApiKey,
+  saveBackupFile,
+  systemInfo,
+  initLog,
   closeOverlayToast,
   focusedAppId,
   openOverlayToast,
@@ -18,17 +22,20 @@ import {
   steamTransport,
   type AppUpdate,
 } from './platform';
-import { BUNDLE_MS, buildOverlayData, DEFAULT_OVERLAY, nextGame, ProgressTracker, type OverlaySettings } from './overlay';
-import { SteamApi } from './steam/api';
+import { BUNDLE_MS, buildOverlayData, DEFAULT_OVERLAY, nextGame, OVERLAY_CORNERS, ProgressTracker, type OverlaySettings } from './overlay';
+import { SteamApi, SteamApiError } from './steam/api';
+import { applyPendingRestore, createBackup, restoreBackup, type Backup, type RestoreResult } from './backup';
+import { buildDiagnostics } from './diagnostics';
+import { log } from './log';
 import type { LocalSteam, StatProgress } from './steam/local';
 import { SyncEngine, type SyncProgress, type UnlockEvent } from './sync/engine';
 import { aggregate } from './sync/merge';
 import { Scheduler } from './sync/scheduler';
 import { libraryStats, newlyEarned, type Earned } from './appAchievements';
 import { completion, type Achievement, type Game } from './types';
-import { errorText, setLocale, systemLocale, t, type Locale, type MessageKey } from './i18n.svelte';
+import { errorText, LOCALES, setLocale, systemLocale, t, type Locale, type MessageKey } from './i18n.svelte';
 import { missableOpen } from './tags';
-import { fmtHours, fmtPercent } from './util';
+import { dayKey, fmtHours, fmtPercent } from './util';
 
 export interface Settings {
   steamId: string;
@@ -66,6 +73,25 @@ const ALREADY_RUNNING_MS = 10_000;
 /** Shorter sessions without an unlock get no recap. */
 const RECAP_MIN_MS = 10 * 60_000;
 
+/**
+ * Settings from a backup over the current ones. Account and achievement language stay (a different
+ * language would reload every schema); only known keys with the right type are taken.
+ */
+export function restoredSettings(current: Settings, saved: Partial<Settings>): Settings {
+  const pick = <T extends object>(base: T, from: unknown, skip: string[] = []): T => {
+    const out = { ...base } as Record<string, unknown>;
+    if (typeof from !== 'object' || from == null) return base;
+    for (const [k, v] of Object.entries(from)) {
+      if (!skip.includes(k) && k in out && typeof v === typeof out[k] && typeof v !== 'object') out[k] = v;
+    }
+    return out as T;
+  };
+  const out = { ...pick(current, saved, ['steamId', 'language']), overlay: pick(current.overlay, saved.overlay) };
+  if (!LOCALES.some((l) => l.id === out.uiLanguage)) out.uiLanguage = current.uiLanguage;
+  if (!OVERLAY_CORNERS.includes(out.overlay.corner)) out.overlay.corner = current.overlay.corner;
+  return out;
+}
+
 /** "A, B, C +2 more" for notifications. */
 function nameList(list: { name: string }[], max = 3): string {
   const names = list.slice(0, max).map((a) => a.name).join(', ');
@@ -82,6 +108,10 @@ class AppState {
   runningAppIds = $state<number[]>([]);
   lastSync = $state<number | null>(null);
   error = $state<string | null>(null);
+  /** Steam rejected the API key: the UI points to the account settings. */
+  authError = $state(false);
+  /** The app could not start (e.g. a database from a newer version). */
+  initError = $state<string | null>(null);
   /** Bumped on every new unlock, so views showing unlocks can reload. */
   unlockSeq = $state(0);
   /** Earned app achievements (the app's own, not Steam's), see appAchievements.ts. */
@@ -128,6 +158,7 @@ class AppState {
   private missableWarned = new Set<number>();
 
   async init() {
+    initLog();
     this.repo = await openRepo();
     const raw = await this.repo.getMeta('settings');
     if (raw) {
@@ -170,6 +201,7 @@ class AppState {
     this.tourOffer = !(await this.repo.getMeta('tourOffered'));
     this.ready = true;
     this.version = await appVersion();
+    log.info(`Start ${this.version}, ${this.games.length} games, schema ${this.repo.schemaVersion ?? '-'}`);
     // Quietly look for updates a bit after start, then twice a day (the app mostly lives in the tray).
     setTimeout(() => void this.checkUpdate(), 10_000);
     setInterval(() => void this.checkUpdate(), 12 * 3_600_000);
@@ -187,6 +219,7 @@ class AppState {
     } catch (e) {
       this.updateState = manual ? 'error' : 'idle';
       if (manual) this.updateError = (e as Error)?.message ?? String(e);
+      log.warn('Update check failed', e);
     }
   }
 
@@ -199,20 +232,119 @@ class AppState {
     } catch (e) {
       this.updateState = 'error';
       this.updateError = (e as Error)?.message ?? String(e);
+      log.error('Update install failed', e);
     }
   }
 
-  /** Validates key + profile with real calls, then stores both. */
+  /**
+   * First setup (or the key went missing): validates key + profile with real calls, then stores both.
+   * Data of a different account is backed up and cleared without asking: this screen starts over anyway.
+   */
   async setup(apiKey: string, steamIdInput: string, language: string) {
+    const steamid = await this.validate(apiKey, steamIdInput, language);
+    await this.switchTo(apiKey, steamid, steamIdInput, language);
+  }
+
+  /**
+   * Changes the API key and/or the Steam account from the settings. An empty key keeps the stored one.
+   * For a different account it first returns `{ confirm }`; called again with `confirmed`, the current
+   * data goes to a backup file and is cleared, so two accounts never mix. Throws like the Steam API.
+   */
+  async changeAccount(apiKeyInput: string, steamIdInput: string, confirmed = false): Promise<{ confirm: string } | { backup: string | null }> {
+    const apiKey = apiKeyInput.trim() || (await loadApiKey());
+    if (!apiKey) throw new SteamApiError('auth', 'No API key stored');
+    const steamid = await this.validate(apiKey, steamIdInput, this.settings.language);
+    const current = await this.repo.getMeta('steamid64');
+    if (current && current !== steamid && !confirmed) return { confirm: steamid };
+    return { backup: await this.switchTo(apiKey, steamid, steamIdInput, this.settings.language) };
+  }
+
+  /** Resolves the profile and checks key and privacy with real calls (2 at most). Returns the SteamID64. */
+  private async validate(apiKey: string, steamIdInput: string, language: string): Promise<string> {
     const transport = await steamTransport();
     const api = new SteamApi({ apiKey, language, ...transport });
     const steamid = await api.resolveSteamId(steamIdInput);
     await api.getOwnedGames(steamid); // throws on bad key or private profile
+    return steamid;
+  }
+
+  /** Stores key and account and (re)starts syncing. Returns the backup path when another account's data was cleared. */
+  private async switchTo(apiKey: string, steamid: string, steamIdInput: string, language: string): Promise<string | null> {
+    // Nothing may write while the account changes: stop the running engine first.
+    this.scheduler?.stop();
+    this.scheduler = null;
+    await this.engine?.stop();
+    this.engine = null;
+    const current = await this.repo.getMeta('steamid64');
+    let backup: string | null = null;
+    if (current && current !== steamid) {
+      // Saved first: if that fails, nothing is cleared.
+      if ((await this.repo.getGames()).length) backup = await this.exportBackup();
+      await this.repo.clearAccountData();
+      this.games = [];
+      this.appAchievements = {};
+      this.lastSync = null;
+      this.progress = null;
+      this.runningAppIds = [];
+      this.sessions.clear();
+      this.missableWarned.clear();
+      this.descriptionsTried.clear();
+      this.tracker = new ProgressTracker();
+      log.info('Switched to another Steam account; the previous data was backed up and cleared');
+    }
     await saveApiKey(apiKey);
     await this.repo.setMeta('steamid64', steamid);
     await this.saveSettings({ ...this.settings, steamId: steamIdInput, language });
     this.configured = true;
+    this.authError = false;
+    this.error = null;
     await this.start(apiKey);
+    return backup;
+  }
+
+  /** Saves a backup of the user's own data (see backup.ts) to Downloads. Returns where it went. */
+  async exportBackup(): Promise<string> {
+    const backup = await createBackup(this.repo, this.version);
+    const path = await saveBackupFile(`achievement-hunter-backup-${dayKey(Date.now())}.json`, JSON.stringify(backup, null, 1));
+    log.info(`Backup saved: ${backup.games.length} games, ${backup.snapshots.length} snapshots`);
+    return path;
+  }
+
+  /** Adds a backup's data to the current data. Games not synced yet follow after later syncs. */
+  async importBackup(backup: Backup): Promise<RestoreResult> {
+    // Wait for a sync in flight, so it doesn't save over the restored pins and notes.
+    await this.engine?.idle();
+    const res = await restoreBackup(this.repo, backup);
+    for (const g of res.games) this.upsertLocal(g);
+    // Milestones stay earned; each keeps its earliest date.
+    const earned = { ...this.appAchievements };
+    for (const [id, at] of Object.entries(backup.appAchievements)) earned[id] = Math.min(earned[id] ?? at, at);
+    this.appAchievements = earned;
+    await this.repo.setMeta('appAchievements', JSON.stringify(earned));
+    if (backup.settings) await this.saveSettings(restoredSettings(this.settings, backup.settings));
+    this.unlockSeq++;
+    log.info(`Backup restored: ${res.games.length} games, ${res.pending} waiting, ${res.snapshots} snapshots`);
+    return res;
+  }
+
+  /** Text for a bug report: versions, counts, settings and the log, without key or SteamID. */
+  async diagnostics(): Promise<string> {
+    const [sys, logText] = await Promise.all([
+      systemInfo().catch(() => ({ os: 'unknown', steamInstalled: null })),
+      readLog().catch((e) => `(log unreadable: ${e})`),
+    ]);
+    return buildDiagnostics({
+      version: this.version,
+      os: sys.os,
+      steamInstalled: sys.steamInstalled,
+      localCache: this.local != null,
+      schemaVersion: this.repo.schemaVersion ?? null,
+      games: this.games,
+      lastSync: this.lastSync,
+      error: this.error,
+      settings: this.settings,
+      log: logText,
+    });
   }
 
   startTour() {
@@ -242,6 +374,7 @@ class AppState {
       this.overlayError = null;
     } catch (e) {
       this.overlayError = errorText(e);
+      log.warn('Overlay hotkey', e);
     }
   }
 
@@ -402,7 +535,10 @@ class AppState {
         if (this.overlayOpen) void this.pushOverlay();
       },
       onClosed: (id, startedAt) => this.onGameClosed(id, startedAt),
-      onError: (e) => (this.error = errorText(e)),
+      onError: (e) => {
+        this.error = errorText(e);
+        log.warn('Live update', e);
+      },
       // Through sync(), so a later good run clears the error of an earlier one.
       librarySync: (force) => this.sync(force),
     });
@@ -412,17 +548,30 @@ class AppState {
   }
 
   async sync(force = false) {
-    if (!this.engine) return;
+    const engine = this.engine;
+    if (!engine) return;
     this.error = null;
+    const started = Date.now();
+    let failure: unknown = null;
     try {
-      const res = await this.engine.sync({ force });
+      const res = await engine.sync({ force });
       if (res.aborted) this.error = res.abortedError ? errorText(res.abortedError) : res.aborted;
       else if (res.errors.length) this.error = t('sync.failedGames', { n: res.errors.length });
       this.lastSync = Date.now();
+      failure = res.abortedError ?? null;
+      log.info(`Sync${force ? ' (force)' : ''}: ${res.tasks} tasks, ${res.updated} updated, ${res.errors.length} errors, ${Date.now() - started} ms`);
+      if (res.aborted) log.warn('Sync aborted', res.abortedError ?? res.aborted);
+      for (const e of res.errors.slice(0, 5)) log.warn(`Game ${e.appid} failed: ${e.message}`);
     } catch (e) {
       this.error = errorText(e);
+      failure = e;
+      log.error('Sync failed', e);
     }
+    this.authError = failure instanceof SteamApiError && failure.kind === 'auth';
+    // The account changed meanwhile: this run's results belong to nobody.
+    if (engine !== this.engine) return;
     this.progress = null;
+    await applyPendingRestore(this.repo).catch((e) => log.warn('Pending restore', e));
     this.games = await this.repo.getGames();
     this.scheduleAppAchCheck();
   }

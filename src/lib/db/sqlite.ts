@@ -1,67 +1,7 @@
 import Database from '@tauri-apps/plugin-sql';
 import type { Achievement, Game, Snapshot, Status } from '../types';
-import type { Repo } from './repo';
-
-const MIGRATIONS = [
-  `CREATE TABLE IF NOT EXISTS games (
-    appid INTEGER PRIMARY KEY,
-    name TEXT NOT NULL,
-    playtime INTEGER NOT NULL DEFAULT 0,
-    last_played INTEGER NOT NULL DEFAULT 0,
-    icon_hash TEXT NOT NULL DEFAULT '',
-    status TEXT,
-    status_manual INTEGER NOT NULL DEFAULT 0,
-    unlocked INTEGER NOT NULL DEFAULT 0,
-    total INTEGER,
-    schema_fetched_at INTEGER,
-    player_fetched_at INTEGER,
-    global_fetched_at INTEGER,
-    was_perfect INTEGER NOT NULL DEFAULT 0,
-    hidden INTEGER NOT NULL DEFAULT 0,
-    pinned INTEGER NOT NULL DEFAULT 0,
-    easy_open INTEGER NOT NULL DEFAULT 0,
-    effort REAL NOT NULL DEFAULT 0,
-    rarest_open REAL,
-    rarity_score REAL NOT NULL DEFAULT 0,
-    last_unlock INTEGER NOT NULL DEFAULT 0
-  )`,
-  `CREATE TABLE IF NOT EXISTS achievements (
-    appid INTEGER NOT NULL,
-    apiname TEXT NOT NULL,
-    name TEXT NOT NULL,
-    description TEXT NOT NULL DEFAULT '',
-    hidden INTEGER NOT NULL DEFAULT 0,
-    icon TEXT NOT NULL DEFAULT '',
-    icongray TEXT NOT NULL DEFAULT '',
-    achieved INTEGER NOT NULL DEFAULT 0,
-    unlocktime INTEGER NOT NULL DEFAULT 0,
-    percent REAL,
-    pinned INTEGER NOT NULL DEFAULT 0,
-    excluded INTEGER NOT NULL DEFAULT 0,
-    note TEXT NOT NULL DEFAULT '',
-    tags TEXT NOT NULL DEFAULT '',
-    sort INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (appid, apiname)
-  )`,
-  `CREATE INDEX IF NOT EXISTS idx_ach_unlock ON achievements(unlocktime) WHERE achieved = 1`,
-  `CREATE TABLE IF NOT EXISTS snapshots (
-    date TEXT NOT NULL,
-    appid INTEGER NOT NULL,
-    playtime INTEGER NOT NULL,
-    unlocked INTEGER NOT NULL,
-    PRIMARY KEY (date, appid)
-  )`,
-  `CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
-];
-
-/** Columns added after the first release: [table, column, definition]. Added when missing. */
-const ADDED_COLUMNS: [string, string, string][] = [
-  ['games', 'owned', 'INTEGER NOT NULL DEFAULT 1'],
-  ['games', 'pinned_open', 'INTEGER NOT NULL DEFAULT 0'],
-  // NULL = stored before manual tags had their own column (see manualTags() in merge.ts).
-  ['achievements', 'manual_tags', 'TEXT'],
-  ['achievements', 'added_at', 'INTEGER NOT NULL DEFAULT 0'],
-];
+import { migrate, type SqlDb } from './migrate';
+import { KEEP_META, type Repo } from './repo';
 
 const GAME_COLS =
   'appid, name, playtime, last_played, icon_hash, status, status_manual, unlocked, total, schema_fetched_at, player_fetched_at, global_fetched_at, was_perfect, hidden, pinned, easy_open, effort, rarest_open, rarity_score, last_unlock, owned, pinned_open';
@@ -142,17 +82,32 @@ function placeholders(rows: number, cols: number): string {
 const CHUNK = 500;
 
 export class SqliteRepo implements Repo {
-  private constructor(private db: Database) {}
+  private constructor(
+    private db: SqlDb,
+    readonly schemaVersion: number,
+  ) {}
 
-  static async open(path = 'sqlite:achievement-hunter.db'): Promise<SqliteRepo> {
-    const db = await Database.load(path);
+  /**
+   * Opens and migrates the database. Before an existing database is upgraded, a consistent copy
+   * (VACUUM INTO, works in WAL mode) goes to `backupPath(from)`.
+   */
+  static async open(path = 'sqlite:achievement-hunter.db', backupPath?: (from: number) => Promise<string>): Promise<SqliteRepo> {
+    return SqliteRepo.from(await Database.load(path), backupPath);
+  }
+
+  /** Also used by the tests, with a node:sqlite adapter. */
+  static async from(db: SqlDb, backupPath?: (from: number) => Promise<string>): Promise<SqliteRepo> {
     await db.execute('PRAGMA journal_mode = WAL');
-    for (const sql of MIGRATIONS) await db.execute(sql);
-    for (const [table, col, def] of ADDED_COLUMNS) {
-      const cols = await db.select<{ name: string }[]>(`PRAGMA table_info(${table})`);
-      if (!cols.some((c) => c.name === col)) await db.execute(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
-    }
-    return new SqliteRepo(db);
+    const backup = backupPath
+      ? async (from: number) => {
+          await db.execute('VACUUM INTO $1', [await backupPath(from)]).catch((e) => {
+            // A copy from an earlier, interrupted attempt is just as good.
+            if (!/exists/i.test(String(e))) throw e;
+          });
+        }
+      : undefined;
+    const { to } = await migrate(db, backup);
+    return new SqliteRepo(db, to);
   }
 
   async getGames() {
@@ -276,6 +231,23 @@ export class SqliteRepo implements Repo {
       'SELECT date, appid, playtime, unlocked FROM snapshots WHERE date >= $1 AND appid = $2 ORDER BY date',
       [sinceDay, appid],
     );
+  }
+
+  async getAnnotatedAchievements() {
+    // NULL manual_tags (older rows) may hide manual tags in `tags`: the caller sorts those out.
+    const rows = await this.db.select<any[]>(
+      `SELECT ${ACH_COLS} FROM achievements
+       WHERE pinned = 1 OR excluded = 1 OR note <> '' OR manual_tags <> '' OR (manual_tags IS NULL AND tags <> '')
+       ORDER BY appid, sort`,
+    );
+    return rows.map(rowToAch);
+  }
+
+  async clearAccountData() {
+    await this.db.execute('DELETE FROM achievements');
+    await this.db.execute('DELETE FROM games');
+    await this.db.execute('DELETE FROM snapshots');
+    await this.db.execute(`DELETE FROM meta WHERE key NOT IN (${KEEP_META.map((_, i) => `$${i + 1}`).join(', ')})`, [...KEEP_META]);
   }
 
   async getMeta(key: string) {

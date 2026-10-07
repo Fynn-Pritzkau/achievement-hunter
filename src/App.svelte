@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import { app } from './lib/app.svelte';
-  import { t } from './lib/i18n.svelte';
+  import { errorText, t } from './lib/i18n.svelte';
+  import { DbTooNewError } from './lib/db/migrate';
+  import { log } from './lib/log';
   import { hasDesktop, openExternal } from './lib/platform';
   import { tourGame, tourSteps, type TourStep } from './lib/tour';
   import Setup from './views/Setup.svelte';
@@ -51,7 +53,10 @@
   }
 
   onMount(() => {
-    app.init().catch((e) => (app.error = e.message));
+    app.init().catch((e) => {
+      log.error('Start failed', e);
+      app.initError = e instanceof DbTooNewError ? t('error.dbTooNew') : errorText(e);
+    });
   });
 
   function onKey(e: KeyboardEvent) {
@@ -76,7 +81,9 @@
 
 <svelte:window onkeydown={onKey} onclick={onClick} />
 
-{#if !app.ready}
+{#if app.initError}
+  <div class="center"><p class="fatal">{t('app.startFailed')}<br /><span class="muted">{app.initError}</span></p></div>
+{:else if !app.ready}
   <div class="center muted">{t('app.loading')}</div>
 {:else if !app.configured}
   <Setup />
@@ -131,6 +138,7 @@
 
 <style>
   .center { height: 100%; display: grid; place-items: center; }
+  .fatal { max-width: 460px; text-align: center; line-height: 1.6; padding: 16px; }
   .layout { display: grid; grid-template-columns: 240px 1fr; height: 100%; }
   main { overflow: auto; min-width: 0; }
   .offer {

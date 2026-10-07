@@ -4,6 +4,7 @@
  */
 import { MemoryRepo, type Repo } from './db/repo';
 import type { OverlayCorner, OverlayData } from './overlay';
+import { sessionLog, setLogSink } from './log';
 import type { FetchFn } from './steam/api';
 import { tauriLocalSteam, type LocalSteam } from './steam/local';
 
@@ -31,9 +32,65 @@ export async function openRepo(): Promise<Repo> {
   if (isMock) return (await mock()).openRepo();
   if (isTauri) {
     const { SqliteRepo } = await import('./db/sqlite');
-    return SqliteRepo.open();
+    const { appConfigDir, join } = await import('@tauri-apps/api/path');
+    // Next to the database (tauri-plugin-sql keeps it in the app config dir).
+    return SqliteRepo.open(undefined, async (from) => join(await appConfigDir(), `achievement-hunter.before-upgrade-v${from}.db`));
   }
   return new LocalStorageRepo();
+}
+
+/** Sends log lines to the log file in the app; elsewhere they only stay in memory (see log.ts). */
+export function initLog(): void {
+  if (!isTauri) return;
+  setLogSink(async (level, message) => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('write_log', { level, message });
+  });
+}
+
+/** The log file (newest part), or this session's lines where there is no file. */
+export async function readLog(): Promise<string> {
+  if (!isTauri) return sessionLog();
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<string>('read_log');
+}
+
+export interface SystemInfo {
+  os: string;
+  /** null = can't tell (browser). */
+  steamInstalled: boolean | null;
+}
+
+export async function systemInfo(): Promise<SystemInfo> {
+  if (isMock) return (await mock()).systemInfo();
+  if (!isTauri) return { os: navigator.userAgent, steamInstalled: null };
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<SystemInfo>('system_info');
+}
+
+/** Saves a backup file to Downloads (never overwriting) and returns where it went. In the browser: a download. */
+export async function saveBackupFile(name: string, contents: string): Promise<string> {
+  if (isMock) return (await mock()).saveBackupFile(name, contents);
+  if (isTauri) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<string>('save_backup', { name, contents });
+  }
+  downloadText(name, contents);
+  return name;
+}
+
+/** Shows a saved file in Explorer. */
+export async function revealFile(path: string): Promise<void> {
+  if (!isTauri) return;
+  const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
+  await revealItemInDir(path);
+}
+
+export function downloadText(name: string, contents: string) {
+  const url = URL.createObjectURL(new Blob([contents], { type: 'application/json' }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export async function steamTransport(): Promise<{ fetch: FetchFn; baseUrl: string }> {
@@ -272,6 +329,10 @@ class LocalStorageRepo extends MemoryRepo {
   }
   override async setMeta(k: string, v: string) {
     await super.setMeta(k, v);
+    this.persist();
+  }
+  override async clearAccountData() {
+    await super.clearAccountData();
     this.persist();
   }
 }

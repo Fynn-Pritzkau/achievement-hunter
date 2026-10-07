@@ -3,6 +3,8 @@
   import { LOCALES, t, type MessageKey } from '../lib/i18n.svelte';
   import { MAX_SUGGESTIONS, OVERLAY_CORNERS } from '../lib/overlay';
   import { hasDesktop } from '../lib/platform';
+  import AccountSettings from './AccountSettings.svelte';
+  import DataSettings from './DataSettings.svelte';
 
   let { onClose }: { onClose: () => void } = $props();
 
@@ -76,6 +78,8 @@
         <span class="small muted">{t('settings.overlayProgressPopupHint')}</span>
       </fieldset>
     {/if}
+    <AccountSettings />
+    <DataSettings />
     <div class="row">
       <button class="ghost" onclick={() => app.sync(true)} title={t('settings.reloadAllHint')}>{t('settings.reloadAll')}</button>
       <span></span>

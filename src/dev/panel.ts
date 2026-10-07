@@ -1,7 +1,7 @@
 import { mount } from 'svelte';
 import { app } from '../lib/app.svelte';
 import DevPanel from './DevPanel.svelte';
-import { desktop, world } from './mock';
+import { backups, desktop, world } from './mock';
 
 /** Mounts the mock controls and exposes the mock in the console as `mock`. */
 export function mountPanel() {
@@ -15,6 +15,8 @@ export function mountPanel() {
       world,
       desktop,
       app,
+      /** Backups the app saved (export, account switch). */
+      backups,
       /** The scheduler's 15 s poll (running games, Steam cache), right now. */
       tick: () => internals.scheduler?.tick(),
       /**

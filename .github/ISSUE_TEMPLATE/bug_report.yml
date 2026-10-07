@@ -1,0 +1,45 @@
+name: Bug report
+description: Something doesn't work as it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please **don't paste your Steam Web API key** anywhere in this form.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open …
+        2. Click …
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: |
+        In the app: Settings → Report a problem → **Copy diagnostics**, then paste it here.
+        It contains the app version, Windows version, settings and the app's log, without your API key or SteamID.
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: steam
+    attributes:
+      label: Is the Steam client installed and running on this PC?
+      options:
+        - "Yes"
+        - Installed, but not running
+        - "No"
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots help a lot, e.g. of the overlay or an error message.

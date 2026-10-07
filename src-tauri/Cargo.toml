@@ -2,6 +2,7 @@
 name = "achievement-hunter"
 version = "0.10.1"
 edition = "2021"
+license = "GPL-3.0-only"
 
 [lib]
 name = "achievement_hunter_lib"

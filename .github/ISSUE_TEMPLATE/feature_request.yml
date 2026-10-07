@@ -1,0 +1,19 @@
+name: Feature request
+description: An idea that would make achievement hunting easier
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like to do?
+      description: Describe the situation, e.g. "When I pick my next game, I want to see …"
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How could the app help?
+  - type: markdown
+    attributes:
+      value: |
+        The app only reads Steam's data. It will never unlock achievements, change Steam files or inject into games.

@@ -6,6 +6,7 @@ use tauri::{
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
+mod diag;
 mod steam_local;
 
 const KEYRING_SERVICE: &str = "achievement-hunter";
@@ -200,7 +201,7 @@ fn toggle_overlay(app: &AppHandle) {
             let _ = w.destroy();
         }
     } else if let Err(e) = open_overlay(app) {
-        eprintln!("overlay: {e}");
+        diag::append("ERROR", &format!("overlay: {e}"));
     } else {
         bind_switch(app, true);
     }
@@ -277,9 +278,14 @@ pub fn run() {
             steam_local::local_achievements,
             steam_local::local_playtimes,
             steam_local::local_stats_changed,
-            steam_local::focused_app_id
+            steam_local::focused_app_id,
+            diag::write_log,
+            diag::read_log,
+            diag::system_info,
+            diag::save_backup
         ])
         .setup(|app| {
+            diag::init(app.handle());
             let open = MenuItem::with_id(app, "open", "Öffnen", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Beenden", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open, &quit])?;

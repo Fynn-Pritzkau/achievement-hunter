@@ -32,9 +32,18 @@ export interface Repo {
   addSnapshots(snapshots: Snapshot[]): Promise<void>;
   /** Snapshots since a day; with `appid` only that game's, oldest first. */
   getSnapshots(sinceDay: string, appid?: number): Promise<Snapshot[]>;
+  /** Achievements that may carry user data (pin, exclusion, note, manual tags), for the backup. */
+  getAnnotatedAchievements(): Promise<(Achievement & { appid: number })[]>;
+  /** Removes everything that belongs to the Steam account; keeps the KEEP_META entries. */
+  clearAccountData(): Promise<void>;
   getMeta(key: string): Promise<string | null>;
   setMeta(key: string, value: string): Promise<void>;
+  /** Schema version of the database (SQLite only). */
+  readonly schemaVersion?: number;
 }
+
+/** Meta entries that belong to the app, not to the Steam account: they survive an account switch. */
+export const KEEP_META = ['settings', 'tourOffered'] as const;
 
 export class MemoryRepo implements Repo {
   games = new Map<number, Game>();
@@ -109,6 +118,21 @@ export class MemoryRepo implements Repo {
   async getSnapshots(sinceDay: string, appid?: number) {
     const out = this.snapshots.filter((s) => s.date >= sinceDay && (appid == null || s.appid === appid));
     return appid == null ? out : out.sort((a, b) => a.date.localeCompare(b.date));
+  }
+  async getAnnotatedAchievements() {
+    const out: (Achievement & { appid: number })[] = [];
+    for (const [appid, list] of this.achievements) {
+      for (const a of list) {
+        if (a.pinned || a.excluded || a.note || (a.manualTags ? a.manualTags.length : a.tags.length)) out.push({ ...copy(a), appid });
+      }
+    }
+    return out;
+  }
+  async clearAccountData() {
+    this.games.clear();
+    this.achievements.clear();
+    this.snapshots = [];
+    for (const k of [...this.meta.keys()]) if (!(KEEP_META as readonly string[]).includes(k)) this.meta.delete(k);
   }
   async getMeta(key: string) {
     return this.meta.get(key) ?? null;

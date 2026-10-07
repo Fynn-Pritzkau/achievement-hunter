@@ -64,8 +64,31 @@ export class SyncEngine {
 
   constructor(private opts: EngineOptions) {}
 
+  /** Set by stop(): tasks not started yet are dropped, so nothing writes after the caller moves on. */
+  private stopped = false;
+  /** Single-game refreshes and repairs in flight, which stop() also waits for. */
+  private others = new Set<Promise<unknown>>();
+
   get busy(): boolean {
     return this.running != null;
+  }
+
+  /** Stops for good (account switch): waits for runs in flight, which skip their remaining tasks. */
+  async stop(): Promise<void> {
+    this.stopped = true;
+    await this.idle();
+  }
+
+  /** Resolves once nothing runs: no library or local sync, no single-game refresh. */
+  async idle(): Promise<void> {
+    while (this.running || this.localRunning || this.others.size) {
+      await Promise.allSettled([this.running, this.localRunning, ...this.others]);
+    }
+  }
+
+  private track<T>(p: Promise<T>): Promise<T> {
+    this.others.add(p);
+    return p.finally(() => this.others.delete(p));
   }
 
   get hasLocal(): boolean {
@@ -127,7 +150,12 @@ export class SyncEngine {
   }
 
   /** Live mode: refresh one game's progress only (from disk if possible, else 1 API call). */
-  async syncGame(appid: number): Promise<SyncResult> {
+  syncGame(appid: number): Promise<SyncResult> {
+    return this.track(this.doSyncGame(appid));
+  }
+
+  private async doSyncGame(appid: number): Promise<SyncResult> {
+    if (this.stopped) return emptyResult();
     const known = await this.opts.repo.getGame(appid);
     const result = emptyResult();
     if (!known) return result;
@@ -282,7 +310,11 @@ export class SyncEngine {
    * Fills missing hidden descriptions of a stored game (data from before they were fetched).
    * `useApi: false` only reads Steam's cache. True when something was filled.
    */
-  async fillHiddenDescriptions(appid: number, { useApi = true } = {}): Promise<boolean> {
+  fillHiddenDescriptions(appid: number, opts: { useApi?: boolean } = {}): Promise<boolean> {
+    return this.track(this.doFillHiddenDescriptions(appid, opts));
+  }
+
+  private async doFillHiddenDescriptions(appid: number, { useApi = true } = {}): Promise<boolean> {
     const { repo } = this.opts;
     // Look the texts up first, so a sync in flight doesn't delay them.
     const found = await repo.getAchievements(appid);
@@ -299,7 +331,7 @@ export class SyncEngine {
       a.description = d;
       filled++;
     }
-    if (filled) await repo.saveAchievements(appid, mergeSchema(list, list));
+    if (filled && !this.stopped) await repo.saveAchievements(appid, mergeSchema(list, list));
     return true;
   }
 
@@ -314,6 +346,7 @@ export class SyncEngine {
     let n = 0;
     // One game at a time, so only one achievement list is in memory.
     for (const g of await repo.getGames()) {
+      if (this.stopped) return n;
       if (!g.total) continue;
       const list = await repo.getAchievements(g.appid);
       if (!list.some((a) => a.hidden && !a.description)) continue;
@@ -339,7 +372,7 @@ export class SyncEngine {
     // The limiter inside SteamApi caps parallel requests; this only keeps a few games in flight.
     const queue = [...tasks];
     const worker = async () => {
-      while (!stop) {
+      while (!stop && !this.stopped) {
         const task = queue.shift();
         if (!task) return;
         const k = known.get(task.appid);
