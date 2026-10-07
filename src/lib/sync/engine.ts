@@ -48,6 +48,8 @@ export interface EngineOptions {
   now?: () => number;
   onProgress?: (p: SyncProgress) => void;
   onUnlock?: (e: UnlockEvent) => void;
+  /** An update added achievements to a game we already knew (never on the first look). */
+  onAchievementsAdded?: (game: Game, added: Achievement[]) => void;
   /** Called after each game is saved, so the UI can refresh incrementally. */
   onGameUpdated?: (g: Game) => void;
 }
@@ -398,8 +400,12 @@ export class SyncEngine {
     const hasAchievements = schema ? schema.length > 0 : list.length > 0;
     const percents = task.global && hasAchievements ? await api.getGlobalPercentages(task.appid) : null;
 
+    let added: Achievement[] = [];
     if (schema) {
-      list = mergeSchema(list, schema);
+      const before = new Set(list.map((a) => a.apiname));
+      // On the first look everything is "new"; only later additions come from an update.
+      list = mergeSchema(list, schema, firstLook ? 0 : Math.floor(now / 1000));
+      if (!firstLook && before.size) added = list.filter((a) => !before.has(a.apiname));
       game.schemaFetchedAt = now;
     }
     let fresh: Achievement[] = [];
@@ -422,6 +428,7 @@ export class SyncEngine {
     await repo.saveGame(final);
     this.opts.onGameUpdated?.(final);
 
+    if (added.length) this.opts.onAchievementsAdded?.(final, added);
     if (!firstLook) {
       for (const a of fresh) {
         const ev = { game: final, achievement: a };

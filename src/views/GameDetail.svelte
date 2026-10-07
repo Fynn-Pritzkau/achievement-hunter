@@ -4,7 +4,11 @@
   import { coverUrl, fmtDate, fmtDateTime, fmtHours, fmtPercent } from '../lib/util';
   import { isMessageKey, t } from '../lib/i18n.svelte';
   import { autoTags } from '../lib/tags';
+  import { cleanTag, manualTags } from '../lib/sync/merge';
+  import { effortLevel, estimateLeftMin } from '../lib/lists';
   import type { StatProgress } from '../lib/steam/local';
+  import { tick } from 'svelte';
+  import Timeline from './Timeline.svelte';
 
   let { game, onBack }: { game: Game; onBack: () => void } = $props();
 
@@ -92,6 +96,37 @@
     await app.updateAchievements(game, $state.snapshot(list) as Achievement[]);
   }
 
+  /** Saves the user's tags; the stored list is always auto tags plus these. */
+  function setManualTags(a: Achievement, manual: string[]) {
+    const unique = [...new Set(manual)];
+    return save(a, { manualTags: unique, tags: [...new Set([...autoTags(a), ...unique])] });
+  }
+  function addTag(a: Achievement, input: HTMLInputElement) {
+    const tag = cleanTag(input.value);
+    input.value = '';
+    if (tag) void setManualTags(a, [...manualTags(a), tag]);
+  }
+  const removeTag = (a: Achievement, tag: string) => setManualTags(a, manualTags(a).filter((x) => x !== tag));
+
+  /** Achievements an update added in the last two weeks get a "new" chip. */
+  const NEW_DAYS = 14;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const isNew = (a: Achievement) => !!a.addedAt && nowSec - a.addedAt < NEW_DAYS * 86400;
+
+  // Opened from the search or the focus list: show that achievement.
+  $effect(() => {
+    const target = app.focusAchievement;
+    if (!target || !list.some((a) => a.apiname === target)) return;
+    app.focusAchievement = null;
+    view = 'all';
+    tag = null;
+    expanded = target;
+    void tick().then(() => document.querySelector(`[data-ach="${CSS.escape(target)}"]`)?.scrollIntoView({ block: 'center' }));
+  });
+
+  const effort = $derived(effortLevel(game));
+  const left = $derived(estimateLeftMin(game));
+
   async function refresh() {
     refreshing = true;
     try {
@@ -129,6 +164,8 @@
       {#if game.owned === false}<span class="chip" title={t('library.notOwnedHint')}>{t('library.notOwned')}</span>{/if}
       {#if game.lastPlayed}<span>{t('game.lastPlayed', { date: fmtDate(game.lastPlayed) ?? '' })}</span>{/if}
       <span>{t('game.rarityPoints', { n: Math.round(game.rarityScore) })}</span>
+      {#if effort}<span class="chip effort {effort}" title={t('effort.hint', { n: Math.round(game.effort) })}>{t(`effort.${effort}`)}</span>{/if}
+      {#if left != null}<span title={t('library.leftHint')}>{t('library.left', { t: fmtHours(left) })}</span>{/if}
     </div>
     {#if game.total}<div class="bar" class:perfect={isPerfect(game)}><i style="width:{pct}%"></i></div>{/if}
   </div>
@@ -149,6 +186,10 @@
     <a class="btn" href={`steam://run/${game.appid}`}>{t('game.launch')}</a>
   </div>
 </header>
+
+{#if list.filter((a) => a.achieved && a.unlocktime > 0).length >= 2}
+  <Timeline {game} {list} />
+{/if}
 
 {#if list.length}
   <div class="filters" data-tour="game-filters">
@@ -176,12 +217,13 @@
     {#each shown as a, i (a.apiname)}
       {@const spoiler = a.hidden && !a.achieved && !app.settings.revealHidden && !revealed.has(a.apiname)}
       {@const pr = a.achieved ? undefined : progress.get(a.apiname)}
-      <li data-tour={i === 0 ? 'achievement' : undefined} class:done={a.achieved} class:excluded={a.excluded}>
+      <li data-tour={i === 0 ? 'achievement' : undefined} data-ach={a.apiname} class:done={a.achieved} class:excluded={a.excluded}>
         <div class="ach">
           {#if a.icon}<img src={a.achieved ? a.icon : a.icongray || a.icon} alt="" loading="lazy" />{:else}<span class="noicon">🏆</span>{/if}
           <button class="ghost text" onclick={() => (expanded = expanded === a.apiname ? null : a.apiname)}>
             <div class="name">
               {a.name}
+              {#if isNew(a)}<span class="chip accent" title={t('game.newHint')}>{t('game.new')}</span>{/if}
               {#each a.tags as tg}<span class="chip">{tagLabel(tg)}</span>{/each}
               {#if a.note}<span class="chip" title={a.note}>📝</span>{/if}
             </div>
@@ -216,6 +258,7 @@
         </div>
         {#if expanded === a.apiname}
           {@const rank = rarityRank.of.get(a.apiname)}
+          {@const own = manualTags(a)}
           <div class="extra">
             {#if a.tags.includes('missable') && !a.achieved}
               <div class="warn">
@@ -245,10 +288,22 @@
               {/if}
               <dt>{t('game.unlockedAt')}</dt>
               <dd>{a.achieved ? (fmtDateTime(a.unlocktime) ?? '✓') : t('game.notUnlocked')}</dd>
-              {#each a.tags as tg}
+              {#each a.tags.filter((tg) => !own.includes(tg)) as tg}
                 <dt><span class="chip">{tagLabel(tg)}</span></dt>
                 <dd class="small muted">{tagHint(tg) ?? ''}</dd>
               {/each}
+              <dt>{t('game.tags')}</dt>
+              <dd class="own">
+                {#each own as tg}
+                  <span class="chip">{tg}<button class="ghost x" title={t('game.removeTag')} onclick={() => removeTag(a, tg)}>×</button></span>
+                {/each}
+                <input
+                  class="small"
+                  placeholder={t('game.addTag')}
+                  maxlength="30"
+                  onkeydown={(e) => { if (e.key === 'Enter') addTag(a, e.currentTarget); }}
+                />
+              </dd>
             </dl>
             <textarea
               rows="2"
@@ -347,4 +402,9 @@
   .links a { color: var(--accent); }
   .links label { margin-left: auto; display: flex; gap: 6px; align-items: center; }
   .pad { padding: 16px; }
+  .effort.hard { color: var(--gold); }
+  .effort.brutal { color: var(--warn); }
+  .own { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+  .own input { width: 180px; padding: 2px 6px; }
+  .x { padding: 0 0 0 4px; line-height: 1; }
 </style>

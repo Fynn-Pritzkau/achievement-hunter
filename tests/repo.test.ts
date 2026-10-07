@@ -48,3 +48,41 @@ describe('unlock history', () => {
     expect(days).toEqual({ [dayKey(NOON * 1000)]: 2, [dayKey((NOON + 86_400) * 1000)]: 1 });
   });
 });
+
+describe('queries across games', () => {
+  it('lists pinned open achievements of visible games', async () => {
+    const repo = await setup();
+    await repo.saveAchievements(1, [ach('p', 0, false), ach('done', NOON), ach('ex', 0, false)].map((a) => ({
+      ...a,
+      pinned: true,
+      excluded: a.apiname === 'ex',
+    })));
+    await repo.saveAchievements(2, [{ ...ach('hiddenGame', 0, false), pinned: true }]);
+    expect((await repo.getPinnedOpen()).map((r) => [r.gameName, r.apiname])).toEqual([['One', 'p']]);
+  });
+
+  it('searches names, notes and descriptions, keeping hidden ones secret', async () => {
+    const repo = await setup();
+    await repo.saveAchievements(1, [
+      { ...ach('Fisher', 0, false), description: 'Catch a fish' },
+      { ...ach('Secret', 0, false), description: 'Catch the golden fish', hidden: true },
+      { ...ach('Noted', NOON), note: 'fish at the pier' },
+    ]);
+    const names = async (reveal: boolean) => (await repo.searchAchievements('FISH', 10, reveal)).map((r) => r.apiname);
+    // Open first; the hidden description only matches when revealed.
+    expect(await names(false)).toEqual(['Fisher', 'Noted']);
+    expect(await names(true)).toEqual(['Fisher', 'Secret', 'Noted']);
+    expect(await repo.searchAchievements('fish', 1, false)).toHaveLength(1);
+  });
+
+  it('returns the snapshots of one game, oldest first', async () => {
+    const repo = await setup();
+    await repo.addSnapshots([
+      { date: '2026-05-02', appid: 1, playtime: 20, unlocked: 2 },
+      { date: '2026-05-01', appid: 1, playtime: 10, unlocked: 1 },
+      { date: '2026-05-01', appid: 3, playtime: 5, unlocked: 0 },
+    ]);
+    expect((await repo.getSnapshots('2026-01-01', 1)).map((s) => s.date)).toEqual(['2026-05-01', '2026-05-02']);
+    expect(await repo.getSnapshots('2026-01-01')).toHaveLength(3);
+  });
+});

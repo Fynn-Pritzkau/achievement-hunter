@@ -40,7 +40,12 @@ export interface Achievement extends SchemaAchievement {
   /** Broken / unobtainable — can be left out of the completion. */
   excluded: boolean;
   note: string;
+  /** Auto tags plus the manual ones. */
   tags: string[];
+  /** Tags the user added; they survive every schema refresh. Missing in data from before 0.10. */
+  manualTags?: string[];
+  /** Unix seconds when an update added this achievement, 0/missing = it was there from the start. */
+  addedAt?: number;
 }
 
 export interface Game {
@@ -81,6 +86,8 @@ export interface Game {
   rarityScore: number;
   /** Unix seconds of the newest unlock, 0 = none. */
   lastUnlock: number;
+  /** Pinned (focus) achievements that are still open. */
+  pinnedOpen: number;
 }
 
 export interface Snapshot {
@@ -114,6 +121,7 @@ export function emptyGame(appid: number, name: string): Game {
     rarestOpen: null,
     rarityScore: 0,
     lastUnlock: 0,
+    pinnedOpen: 0,
   };
 }
 

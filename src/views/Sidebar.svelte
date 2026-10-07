@@ -15,6 +15,8 @@
   const counts = $derived(
     Object.fromEntries(SMART_LISTS.map((l) => [l.id, app.games.filter((g) => l.filter(g, ctx)).length])),
   );
+  /** The focus list counts achievements, not games. */
+  const focusCount = $derived(app.games.reduce((n, g) => n + (g.hidden ? 0 : (g.pinnedOpen ?? 0)), 0));
   const stats = $derived(totals(app.games));
   const appAchCount = $derived(Object.keys(app.appAchievements).length);
   const running = $derived(app.games.filter((g) => app.runningAppIds.includes(g.appid)));
@@ -79,7 +81,7 @@
         {#if open}
           {#each s.lists as id (id)}
             <button class="ghost item" class:active={listId === id} title={t(`list.${id}.hint` as MessageKey)} onclick={() => select(id)}>
-              <span>{t(`list.${id}` as MessageKey)}</span><span class="muted small">{counts[id]}</span>
+              <span>{t(`list.${id}` as MessageKey)}</span><span class="muted small">{id === 'focus' ? focusCount : counts[id]}</span>
             </button>
           {/each}
         {/if}

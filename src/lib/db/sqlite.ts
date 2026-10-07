@@ -55,12 +55,18 @@ const MIGRATIONS = [
 ];
 
 /** Columns added after the first release: [table, column, definition]. Added when missing. */
-const ADDED_COLUMNS: [string, string, string][] = [['games', 'owned', 'INTEGER NOT NULL DEFAULT 1']];
+const ADDED_COLUMNS: [string, string, string][] = [
+  ['games', 'owned', 'INTEGER NOT NULL DEFAULT 1'],
+  ['games', 'pinned_open', 'INTEGER NOT NULL DEFAULT 0'],
+  // NULL = stored before manual tags had their own column (see manualTags() in merge.ts).
+  ['achievements', 'manual_tags', 'TEXT'],
+  ['achievements', 'added_at', 'INTEGER NOT NULL DEFAULT 0'],
+];
 
 const GAME_COLS =
-  'appid, name, playtime, last_played, icon_hash, status, status_manual, unlocked, total, schema_fetched_at, player_fetched_at, global_fetched_at, was_perfect, hidden, pinned, easy_open, effort, rarest_open, rarity_score, last_unlock, owned';
+  'appid, name, playtime, last_played, icon_hash, status, status_manual, unlocked, total, schema_fetched_at, player_fetched_at, global_fetched_at, was_perfect, hidden, pinned, easy_open, effort, rarest_open, rarity_score, last_unlock, owned, pinned_open';
 const ACH_COLS =
-  'appid, apiname, name, description, hidden, icon, icongray, achieved, unlocktime, percent, pinned, excluded, note, tags, sort';
+  'appid, apiname, name, description, hidden, icon, icongray, achieved, unlocktime, percent, pinned, excluded, note, tags, sort, manual_tags, added_at';
 
 const b = (v: boolean) => (v ? 1 : 0);
 
@@ -68,7 +74,7 @@ function gameParams(g: Game): unknown[] {
   return [
     g.appid, g.name, g.playtime, g.lastPlayed, g.iconHash, g.status, b(g.statusManual), g.unlocked, g.total,
     g.schemaFetchedAt, g.playerFetchedAt, g.globalFetchedAt, b(g.wasPerfect), b(g.hidden), b(g.pinned),
-    g.easyOpen, g.effort, g.rarestOpen, g.rarityScore, g.lastUnlock, b(g.owned),
+    g.easyOpen, g.effort, g.rarestOpen, g.rarityScore, g.lastUnlock, b(g.owned), g.pinnedOpen ?? 0,
   ];
 }
 
@@ -95,6 +101,7 @@ function rowToGame(r: any): Game {
     rarestOpen: r.rarest_open ?? null,
     rarityScore: r.rarity_score,
     lastUnlock: r.last_unlock,
+    pinnedOpen: r.pinned_open ?? 0,
   };
 }
 
@@ -114,6 +121,8 @@ function rowToAch(r: any): Achievement & { appid: number } {
     excluded: !!r.excluded,
     note: r.note,
     tags: r.tags ? String(r.tags).split(',') : [],
+    ...(r.manual_tags != null && { manualTags: r.manual_tags ? String(r.manual_tags).split(',') : [] }),
+    addedAt: r.added_at ?? 0,
   };
 }
 
@@ -186,6 +195,7 @@ export class SqliteRepo implements Repo {
       const params = chunk.flatMap((a, j) => [
         appid, a.apiname, a.name, a.description, b(a.hidden), a.icon, a.icongray, b(a.achieved), a.unlocktime,
         a.percent, b(a.pinned), b(a.excluded), a.note, a.tags.join(','), i + j,
+        a.manualTags ? a.manualTags.join(',') : null, a.addedAt ?? 0,
       ]);
       await this.db.execute(
         `INSERT INTO achievements (${ACH_COLS}) VALUES ${placeholders(chunk.length, cols.length)}
@@ -203,15 +213,38 @@ export class SqliteRepo implements Repo {
     }
   }
 
-  async getUnlocks({ before, limit }: { before?: number; limit: number }) {
+  /** Achievements with their game's name, from games that aren't hidden. */
+  private async achRows(where: string, params: unknown[], tail: string) {
     const cols = ACH_COLS.split(', ').map((c) => `a.${c}`).join(', ');
     const rows = await this.db.select<any[]>(
       `SELECT ${cols}, g.name AS game_name FROM achievements a JOIN games g ON g.appid = a.appid
-       WHERE a.achieved = 1 AND a.unlocktime > 0 AND a.unlocktime < $1 AND g.hidden = 0
-       ORDER BY a.unlocktime DESC LIMIT $2`,
-      [before ?? Number.MAX_SAFE_INTEGER, limit],
+       WHERE g.hidden = 0 AND ${where} ${tail}`,
+      params,
     );
     return rows.map((r) => ({ ...rowToAch(r), gameName: r.game_name as string }));
+  }
+
+  async getUnlocks({ before, limit }: { before?: number; limit: number }) {
+    return this.achRows(
+      'a.achieved = 1 AND a.unlocktime > 0 AND a.unlocktime < $1',
+      [before ?? Number.MAX_SAFE_INTEGER, limit],
+      'ORDER BY a.unlocktime DESC LIMIT $2',
+    );
+  }
+
+  async getPinnedOpen() {
+    return this.achRows('a.pinned = 1 AND a.achieved = 0 AND a.excluded = 0', [], 'ORDER BY g.last_played DESC, a.appid, a.sort');
+  }
+
+  async searchAchievements(q: string, limit: number, revealHidden: boolean) {
+    // The user's text goes into LIKE: escape its wildcards (with !, which needs no quoting).
+    const like = `%${q.replace(/[!%_]/g, (c) => '!' + c)}%`;
+    return this.achRows(
+      `(a.name LIKE $1 ESCAPE '!' OR a.note LIKE $1 ESCAPE '!'
+        OR ((a.hidden = 0 OR a.achieved = 1 OR $2 = 1) AND a.description LIKE $1 ESCAPE '!'))`,
+      [like, b(revealHidden), limit],
+      'ORDER BY a.achieved, g.last_played DESC LIMIT $3',
+    );
   }
 
   async unlocksPerDay(sinceUnix: number) {
@@ -235,8 +268,14 @@ export class SqliteRepo implements Repo {
     }
   }
 
-  async getSnapshots(sinceDay: string) {
-    return this.db.select<Snapshot[]>('SELECT date, appid, playtime, unlocked FROM snapshots WHERE date >= $1', [sinceDay]);
+  async getSnapshots(sinceDay: string, appid?: number) {
+    if (appid == null) {
+      return this.db.select<Snapshot[]>('SELECT date, appid, playtime, unlocked FROM snapshots WHERE date >= $1', [sinceDay]);
+    }
+    return this.db.select<Snapshot[]>(
+      'SELECT date, appid, playtime, unlocked FROM snapshots WHERE date >= $1 AND appid = $2 ORDER BY date',
+      [sinceDay, appid],
+    );
   }
 
   async getMeta(key: string) {

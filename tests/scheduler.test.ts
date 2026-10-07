@@ -13,15 +13,17 @@ async function setup() {
 
   let running: number[] = [];
   const changes: number[][] = [];
+  const closed: { appid: number; startedAt: number; unlocks: number }[] = [];
   const s = new Scheduler({
     engine,
     intervalMs: 3_600_000,
     liveIntervalMs: 150_000,
     getRunningAppIds: async () => running,
     onRunningChange: (ids) => changes.push(ids),
+    onClosed: (appid, startedAt, result) => closed.push({ appid, startedAt, unlocks: result.unlocks.length }),
   });
   steam.calls = [];
-  return { steam, s, changes, run: (ids: number[]) => (running = ids) };
+  return { steam, s, changes, closed, run: (ids: number[]) => (running = ids) };
 }
 
 describe('Scheduler live mode', () => {
@@ -74,5 +76,18 @@ describe('Scheduler live mode', () => {
     await s.tick(250_000); // now 8
     expect(steam.calls).toHaveLength(2);
     expect(steam.calls[1]).toContain('appid=8');
+  });
+
+  it('reports each closed game once with its start time and final refresh, at no extra cost', async () => {
+    const { steam, s, closed, run } = await setup();
+    run([7]);
+    await s.tick(1_000);
+    await s.tick(150_000); // live refresh moves the timer, not the start
+    steam.calls = [];
+    run([]);
+    await s.tick(170_000);
+    await s.tick(185_000);
+    expect(steam.calls).toHaveLength(1);
+    expect(closed).toEqual([{ appid: 7, startedAt: 1_000, unlocks: 0 }]);
   });
 });

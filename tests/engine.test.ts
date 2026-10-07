@@ -100,6 +100,32 @@ describe('SyncEngine', () => {
     expect(await repo.getGame(1)).toMatchObject({ total: 2, unlocked: 1, wasPerfect: true, status: 'playing' });
   });
 
+  it('reports achievements an update added, without extra calls and never on the first look', async () => {
+    const steam = new FakeSteam();
+    const repo = new MemoryRepo();
+    const added: string[][] = [];
+    const engine = new SyncEngine({
+      api: steam.api(),
+      repo,
+      steamid: '76561198000000000',
+      now: () => NOW,
+      onAchievementsAdded: (_g, list) => added.push(list.map((a) => a.apiname)),
+    });
+    const g = steam.add({ appid: 1, name: 'Alpha', playtime: 120, lastPlayed: RECENT, achievements: { a: [true, 100, 80] } });
+    await engine.sync();
+    expect(added).toEqual([]);
+    g.playtime = 130;
+    g.achievements.dlc = [false, 0, 5];
+    steam.calls = [];
+    await engine.sync();
+    // Same calls as without the feature: owned games, player progress, the new schema.
+    expect(steam.calls).toHaveLength(3);
+    expect(added).toEqual([['dlc']]);
+    const list = await repo.getAchievements(1);
+    expect(list.find((a) => a.apiname === 'dlc')?.addedAt).toBe(Math.floor(NOW / 1000));
+    expect(list.find((a) => a.apiname === 'a')?.addedAt).toBe(0);
+  });
+
   it('fetches hidden descriptions with one extra call, and keeps them across refreshes', async () => {
     const { steam, repo, engine } = setup();
     const g = steam.add({ appid: 1, name: 'Alpha', playtime: 120, lastPlayed: RECENT, achievements: { a: [false, 0, 80], secret: [false, 0, 17] }, hidden: ['secret'] });

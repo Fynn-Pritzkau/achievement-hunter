@@ -25,9 +25,10 @@ import { SyncEngine, type SyncProgress, type UnlockEvent } from './sync/engine';
 import { aggregate } from './sync/merge';
 import { Scheduler } from './sync/scheduler';
 import { libraryStats, newlyEarned, type Earned } from './appAchievements';
-import type { Achievement, Game } from './types';
+import { completion, type Achievement, type Game } from './types';
 import { errorText, setLocale, systemLocale, t, type Locale, type MessageKey } from './i18n.svelte';
-import { fmtPercent } from './util';
+import { missableOpen } from './tags';
+import { fmtHours, fmtPercent } from './util';
 
 export interface Settings {
   steamId: string;
@@ -40,6 +41,10 @@ export interface Settings {
   /** Show descriptions of hidden achievements without clicking. */
   revealHidden: boolean;
   notifyUnlocks: boolean;
+  /** Notify about open missable achievements when a game starts. */
+  warnMissable: boolean;
+  /** Notify with a short summary when a game closes. */
+  sessionRecap: boolean;
   overlay: OverlaySettings;
 }
 
@@ -51,8 +56,21 @@ const DEFAULT_SETTINGS: Settings = {
   staleDays: 14,
   revealHidden: false,
   notifyUnlocks: true,
+  warnMissable: true,
+  sessionRecap: true,
   overlay: DEFAULT_OVERLAY,
 };
+
+/** Games found running this soon after the start were already running: no warning, no recap. */
+const ALREADY_RUNNING_MS = 10_000;
+/** Shorter sessions without an unlock get no recap. */
+const RECAP_MIN_MS = 10 * 60_000;
+
+/** "A, B, C +2 more" for notifications. */
+function nameList(list: { name: string }[], max = 3): string {
+  const names = list.slice(0, max).map((a) => a.name).join(', ');
+  return list.length > max ? `${names} ${t('notify.more', { n: list.length - max })}` : names;
+}
 
 /** App-wide reactive state. */
 class AppState {
@@ -79,6 +97,8 @@ class AppState {
   touring = $state(false);
   /** The one-time "take the tour?" card is shown. */
   tourOffer = $state(false);
+  /** Achievement (apiname) the game page should expand and scroll to, e.g. from the search. */
+  focusAchievement = $state<string | null>(null);
 
   repo!: Repo;
   /** Only while the overlay window exists does the main window send it updates. */
@@ -101,6 +121,11 @@ class AppState {
   private local: LocalSteam | null = null;
   private scheduler: Scheduler | null = null;
   private appAchTimer: ReturnType<typeof setTimeout> | null = null;
+  private startedAt = 0;
+  /** Progress of games started while the app ran, for the session recap. */
+  private sessions = new Map<number, { unlocked: number; total: number | null }>();
+  /** Games already warned about missables in this app session. */
+  private missableWarned = new Set<number>();
 
   async init() {
     this.repo = await openRepo();
@@ -357,8 +382,12 @@ class AppState {
       onProgress: (p) => (this.progress = p.done < p.total ? p : null),
       onGameUpdated: (g) => this.upsertLocal(g),
       onUnlock: (e) => this.onUnlock(e),
+      onAchievementsAdded: (g, added) => {
+        if (this.settings.notifyUnlocks) void notify(t('notify.newAch', { game: g.name, n: added.length }), nameList(added));
+      },
     });
     this.scheduler?.stop();
+    this.startedAt = Date.now();
     this.scheduler = new Scheduler({
       engine: this.engine,
       intervalMs: this.settings.intervalMinutes * 60_000,
@@ -369,8 +398,10 @@ class AppState {
         this.runningAppIds = ids;
         // Baseline for started games, so their first counter step counts.
         for (const id of started) void this.localProgress(id).then((p) => this.tracker.update(id, p, Date.now()));
+        if (Date.now() - this.startedAt > ALREADY_RUNNING_MS) for (const id of started) void this.onGameStarted(id);
         if (this.overlayOpen) void this.pushOverlay();
       },
+      onClosed: (id, startedAt) => this.onGameClosed(id, startedAt),
       onError: (e) => (this.error = errorText(e)),
     });
     this.scheduler.start();
@@ -450,6 +481,34 @@ class AppState {
     // The first sync can earn a whole shelf at once: one summary instead of a burst.
     if (fresh.length > 2) void notify(t('appAchs.notifyMany', { n: fresh.length }), fresh.map((a) => a.icon).join(' '));
     else for (const a of fresh) void notify(t('appAchs.notify', { icon: a.icon }), t(`appAch.${a.id}` as MessageKey));
+  }
+
+  /** A game started while the app runs: remember where it stood, warn about missables. */
+  private async onGameStarted(appid: number) {
+    const g = this.games.find((x) => x.appid === appid);
+    if (!g?.total) return;
+    this.sessions.set(appid, { unlocked: g.unlocked, total: g.total });
+    if (!this.settings.warnMissable || this.missableWarned.has(appid)) return;
+    const open = missableOpen(await this.repo.getAchievements(appid));
+    if (!open.length) return;
+    this.missableWarned.add(appid);
+    void notify(t('notify.missable', { game: g.name, n: open.length }), nameList(open));
+  }
+
+  /** A game closed and got its final refresh: sum up the session. */
+  private onGameClosed(appid: number, startedAt: number) {
+    const before = this.sessions.get(appid);
+    this.sessions.delete(appid);
+    const g = this.games.find((x) => x.appid === appid);
+    if (!before || !g?.total || !this.settings.sessionRecap) return;
+    const n = Math.max(0, g.unlocked - before.unlocked);
+    const ms = Date.now() - startedAt;
+    if (!n && ms < RECAP_MIN_MS) return;
+    const pct = (x: { unlocked: number; total: number | null }) => `${Math.floor(completion(x) ?? 0)} %`;
+    void notify(
+      t('notify.session', { game: g.name }),
+      t('notify.sessionBody', { n, time: fmtHours(Math.round(ms / 60_000)), from: pct(before), to: pct(g) }),
+    );
   }
 
   private onUnlock(e: UnlockEvent) {

@@ -41,6 +41,8 @@
       <input type="number" min="0" bind:value={s.staleDays} />
     </label>
     <label class="check"><input type="checkbox" bind:checked={s.notifyUnlocks} /> {t('settings.notify')}</label>
+    <label class="check"><input type="checkbox" bind:checked={s.warnMissable} /> {t('settings.warnMissable')}</label>
+    <label class="check"><input type="checkbox" bind:checked={s.sessionRecap} /> {t('settings.sessionRecap')}</label>
     <label class="check"><input type="checkbox" bind:checked={s.revealHidden} /> {t('settings.revealHidden')}</label>
     {#if isTauri}
       <fieldset>

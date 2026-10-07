@@ -1,4 +1,4 @@
-import type { SyncEngine } from './engine';
+import type { SyncEngine, SyncResult } from './engine';
 
 export interface SchedulerOptions {
   engine: SyncEngine;
@@ -11,6 +11,8 @@ export interface SchedulerOptions {
   /** All games Steam runs right now; several when idling games side by side. */
   getRunningAppIds: () => Promise<number[]>;
   onRunningChange?: (appids: number[]) => void;
+  /** A game closed and got its final refresh. `startedAt` = when it was first seen running. */
+  onClosed?: (appid: number, startedAt: number, result: SyncResult) => void;
   onError?: (e: unknown) => void;
 }
 
@@ -25,6 +27,8 @@ export class Scheduler {
   private timers: ReturnType<typeof setInterval>[] = [];
   /** Running appid → time of its last live refresh (or of its start). */
   private running = new Map<number, number>();
+  /** Running appid → when it was first seen running. */
+  private startedAt = new Map<number, number>();
 
   constructor(private opts: SchedulerOptions) {}
 
@@ -66,11 +70,23 @@ export class Scheduler {
     const closed = [...this.running.keys()].filter((id) => !current.has(id));
     const started = ids.filter((id) => !this.running.has(id));
     if (closed.length || started.length) {
-      for (const id of closed) this.running.delete(id);
-      for (const id of started) this.running.set(id, now);
+      const since = new Map(closed.map((id) => [id, this.startedAt.get(id) ?? now]));
+      for (const id of closed) {
+        this.running.delete(id);
+        this.startedAt.delete(id);
+      }
+      for (const id of started) {
+        this.running.set(id, now);
+        this.startedAt.set(id, now);
+      }
       this.opts.onRunningChange?.(this.runningAppIds);
       // Closed games: Steam has the final state now — refresh each once.
-      for (const id of closed) await this.safe(() => engine.syncGame(id));
+      for (const id of closed) {
+        await this.safe(async () => {
+          const result = await engine.syncGame(id);
+          this.opts.onClosed?.(id, since.get(id)!, result);
+        });
+      }
       return;
     }
     if (engine.hasLocal) {

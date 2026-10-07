@@ -12,6 +12,7 @@
   import SettingsView from './views/Settings.svelte';
   import AppAchievements from './views/AppAchievements.svelte';
   import History from './views/History.svelte';
+  import Focus from './views/Focus.svelte';
   import Tour from './views/Tour.svelte';
 
   let listId = $state('all');
@@ -94,6 +95,8 @@
         <AppAchievements />
       {:else if listId === 'history'}
         <History onOpen={(id) => (openAppId = id)} />
+      {:else if listId === 'focus'}
+        <Focus onOpen={(id) => (openAppId = id)} />
       {:else}
         <Library {listId} onOpen={(id) => (openAppId = id)} />
       {/if}
@@ -102,7 +105,8 @@
   {#if paletteOpen}
     <Palette
       onClose={() => (paletteOpen = false)}
-      onOpen={(id) => {
+      onOpen={(id, apiname) => {
+        app.focusAchievement = apiname ?? null;
         openAppId = id;
         paletteOpen = false;
       }}

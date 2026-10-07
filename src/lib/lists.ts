@@ -20,6 +20,9 @@ const pct = (g: Game) => completion(g) ?? 0;
 export const SMART_LISTS: SmartList[] = [
   { id: 'running', filter: (g, c) => c.runningAppIds.includes(g.appid), sort: 'recent' },
   { id: 'all', filter: (g) => has(g), sort: 'recent' },
+  // Shown as its own view (Focus.svelte); the filter only feeds the sidebar count.
+  { id: 'focus', filter: (g) => !g.hidden && (g.pinnedOpen ?? 0) > 0, sort: 'recent' },
+  { id: 'closest', filter: (g) => has(g) && (estimateLeftMin(g) ?? Infinity) <= 600, sort: 'left' },
   { id: 'almost', filter: (g) => has(g) && pct(g) >= 80 && !isPerfect(g), sort: 'remaining' },
   { id: 'easy', filter: (g) => has(g) && g.easyOpen > 0, sort: 'easy' },
   { id: 'lost', filter: (g) => has(g) && g.wasPerfect && !isPerfect(g), sort: 'remaining' },
@@ -34,17 +37,34 @@ export const SMART_LISTS: SmartList[] = [
 /** Sidebar grouping of the smart lists. Headers are the i18n keys `section.<id>`; `library` has none. */
 export const LIST_SECTIONS: { id: string; lists: string[]; collapsed?: boolean }[] = [
   { id: 'library', lists: ['all', 'perfect'] },
-  { id: 'hunt', lists: ['almost', 'easy', 'rare'] },
+  { id: 'hunt', lists: ['focus', 'closest', 'almost', 'easy', 'rare'] },
   { id: 'revisit', lists: ['started', 'lost', 'unplayed'] },
   { id: 'more', lists: ['none', 'hidden'], collapsed: true },
 ];
 
-export type SortKey = 'recent' | 'recentUnlock' | 'completion' | 'remaining' | 'effort' | 'easy' | 'rarest' | 'rarity' | 'playtime' | 'name';
+export type SortKey = 'recent' | 'recentUnlock' | 'completion' | 'remaining' | 'effort' | 'left' | 'easy' | 'rarest' | 'rarity' | 'playtime' | 'name';
 
 /** Labels are the i18n keys `sort.<key>`. */
-export const SORTS: SortKey[] = ['recent', 'recentUnlock', 'completion', 'remaining', 'effort', 'easy', 'rarest', 'rarity', 'playtime', 'name'];
+export const SORTS: SortKey[] = ['recent', 'recentUnlock', 'completion', 'remaining', 'effort', 'left', 'easy', 'rarest', 'rarity', 'playtime', 'name'];
 
 const remaining = (g: Game) => (g.total ?? 0) - g.unlocked;
+
+export type EffortLevel = 'easy' | 'medium' | 'hard' | 'brutal';
+
+/** Rough difficulty of what is left, from `effort` (sum of 100/percent over the open achievements). */
+export function effortLevel(g: Pick<Game, 'unlocked' | 'total' | 'effort'>): EffortLevel | null {
+  if (!g.total || isPerfect(g)) return null;
+  return g.effort < 50 ? 'easy' : g.effort < 300 ? 'medium' : g.effort < 1500 ? 'hard' : 'brutal';
+}
+
+/**
+ * Rough minutes to 100 %: the player's pace in this game so far (minutes per rarity point)
+ * times the rarity points still open. Null when there is too little to go on.
+ */
+export function estimateLeftMin(g: Pick<Game, 'unlocked' | 'total' | 'effort' | 'playtime' | 'rarityScore'>): number | null {
+  if (!g.total || isPerfect(g) || g.unlocked < 3 || g.playtime < 60) return null;
+  return Math.round((g.playtime / Math.max(g.rarityScore, 1)) * g.effort);
+}
 
 const COMPARE: Record<SortKey, (a: Game, b: Game) => number> = {
   recent: (a, b) => b.lastPlayed - a.lastPlayed,
@@ -52,6 +72,7 @@ const COMPARE: Record<SortKey, (a: Game, b: Game) => number> = {
   completion: (a, b) => pct(b) - pct(a),
   remaining: (a, b) => remaining(a) - remaining(b),
   effort: (a, b) => a.effort - b.effort,
+  left: (a, b) => (estimateLeftMin(a) ?? Infinity) - (estimateLeftMin(b) ?? Infinity),
   easy: (a, b) => b.easyOpen - a.easyOpen,
   rarest: (a, b) => (a.rarestOpen ?? 101) - (b.rarestOpen ?? 101),
   rarity: (a, b) => b.rarityScore - a.rarityScore,

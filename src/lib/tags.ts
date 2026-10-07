@@ -1,4 +1,4 @@
-import type { SchemaAchievement } from './types';
+import type { Achievement, SchemaAchievement } from './types';
 
 export type AutoTag = 'online' | 'coop' | 'difficulty' | 'collectible' | 'grind' | 'speedrun' | 'missable';
 
@@ -24,6 +24,14 @@ const RULES: [AutoTag, RegExp][] = [
 
 /** Counts like "Win 50 matches" or "Kill 1,000 enemies" hint at a grind. */
 const GRIND_RE = /\b(\d{1,3}(?:[.,]\d{3})+|\d{3,})\b|\b(?:win|kill|defeat|complete|play|gewinne|töte|besiege|spiele)\s+(\d{2,})\b/i;
+
+/** Stored tags only change on a schema refresh; this also applies newer rules. */
+export const isMissable = (a: Pick<Achievement, 'name' | 'description' | 'tags'>) =>
+  a.tags.includes('missable') || autoTags(a).includes('missable');
+
+/** Open, counted achievements that may be missed in the current playthrough. */
+export const missableOpen = <T extends Achievement>(list: T[]): T[] =>
+  list.filter((a) => !a.achieved && !a.excluded && isMissable(a));
 
 export function autoTags(a: Pick<SchemaAchievement, 'name' | 'description'>): AutoTag[] {
   const text = `${a.name} ${a.description}`;

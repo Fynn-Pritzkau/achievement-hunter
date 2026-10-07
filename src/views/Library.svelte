@@ -1,7 +1,7 @@
 <script lang="ts">
   import { app } from '../lib/app.svelte';
   import { t, type MessageKey } from '../lib/i18n.svelte';
-  import { SMART_LISTS, SORTS, matchesQuery, sortGames, type SortKey } from '../lib/lists';
+  import { SMART_LISTS, SORTS, effortLevel, estimateLeftMin, matchesQuery, sortGames, type SortKey } from '../lib/lists';
   import { completion, isPerfect } from '../lib/types';
   import { capsuleUrls, fmtDate, fmtHours, fmtPercent } from '../lib/util';
 
@@ -73,6 +73,8 @@
               {#if g.total}<span>{g.unlocked}/{g.total}</span>{:else if g.total === 0}<span>{t('library.noAchievements')}</span>{:else}<span>…</span>{/if}
               {#if g.easyOpen}<span class="chip accent" title={t('library.easyHint')}>{t('library.easy', { n: g.easyOpen })}</span>{/if}
               {#if g.rarestOpen != null && !isPerfect(g)}<span title={t('library.rarestHint')}>{t('library.rarest', { p: fmtPercent(g.rarestOpen) })}</span>{/if}
+              {#if effortLevel(g)}{@const lvl = effortLevel(g)!}<span class="chip effort {lvl}" title={t('effort.hint', { n: Math.round(g.effort) })}>{t(`effort.${lvl}`)}</span>{/if}
+              {#if estimateLeftMin(g) != null}<span title={t('library.leftHint')}>{t('library.left', { t: fmtHours(estimateLeftMin(g)!) })}</span>{/if}
               <span>{fmtHours(g.playtime)}</span>
               {#if g.lastPlayed}<span>{fmtDate(g.lastPlayed)}</span>{/if}
             </div>
@@ -118,4 +120,6 @@
   .meta { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .pct { font-variant-numeric: tabular-nums; font-weight: 600; width: 48px; text-align: right; }
   .pct.gold { color: var(--gold); }
+  .effort.hard { color: var(--gold); }
+  .effort.brutal { color: var(--warn); }
 </style>
