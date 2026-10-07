@@ -1,4 +1,24 @@
-import type { Achievement, Snapshot } from './types';
+import { isPerfect, type Achievement, type Game, type Snapshot } from './types';
+
+/**
+ * Playtime it took to reach 100 %. Exact when a snapshot caught the game at 100 % (its first one)
+ * or when it wasn't played after the last unlock; otherwise the current playtime is an upper bound.
+ */
+export function completionPlaytime(
+  g: Pick<Game, 'unlocked' | 'total' | 'playtime' | 'lastPlayed' | 'lastUnlock'>,
+  snapshots: Snapshot[],
+): { min: number; exact: boolean } | null {
+  if (!g.total || !isPerfect(g) || g.playtime <= 0) return null;
+  const first = snapshots.find((s) => s.unlocked >= g.total!);
+  // A snapshot from before the app knew the game can already be past 100 %; only trust it if
+  // an earlier one shows the game still incomplete.
+  if (first && snapshots.some((s) => s.date < first.date && s.unlocked < g.total!)) {
+    return { min: first.playtime, exact: true };
+  }
+  // lastPlayed is only updated per session; a day of slack covers the session that brought 100 %.
+  const exact = !!g.lastUnlock && g.lastPlayed <= g.lastUnlock + 86400;
+  return { min: first?.playtime ?? g.playtime, exact };
+}
 
 export interface TimelinePoint {
   /** Unix seconds. */

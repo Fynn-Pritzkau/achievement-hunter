@@ -1,6 +1,7 @@
 <script lang="ts">
   import { app } from '../lib/app.svelte';
-  import { STATUSES, completion, isPerfect, type Achievement, type Game, type Status } from '../lib/types';
+  import { STATUSES, completion, isPerfect, type Achievement, type Game, type Snapshot, type Status } from '../lib/types';
+  import { completionPlaytime } from '../lib/timeline';
   import { coverUrl, fmtDate, fmtDateTime, fmtHours, fmtPercent } from '../lib/util';
   import { isMessageKey, t } from '../lib/i18n.svelte';
   import { autoTags } from '../lib/tags';
@@ -127,6 +128,17 @@
   const effort = $derived(effortLevel(game));
   const left = $derived(estimateLeftMin(game));
 
+  // Snapshots are only needed to date the 100 %, so only perfect games load them.
+  let snapshots = $state<Snapshot[]>([]);
+  $effect(() => {
+    const appid = game.appid;
+    if (!isPerfect(game)) return;
+    void app.repo.getSnapshots('0000-00-00', appid).then((s) => {
+      if (game.appid === appid) snapshots = s;
+    });
+  });
+  const perfectIn = $derived(completionPlaytime(game, snapshots.filter((s) => s.appid === game.appid)));
+
   async function refresh() {
     refreshing = true;
     try {
@@ -166,6 +178,11 @@
       <span>{t('game.rarityPoints', { n: Math.round(game.rarityScore) })}</span>
       {#if effort}<span class="chip effort {effort}" title={t('effort.hint', { n: Math.round(game.effort) })}>{t(`effort.${effort}`)}</span>{/if}
       {#if left != null}<span title={t('library.leftHint')}>{t('library.left', { t: fmtHours(left) })}</span>{/if}
+      {#if perfectIn}
+        <span title={t(perfectIn.exact ? 'game.perfectInHint' : 'game.perfectInMaxHint')}>
+          {t(perfectIn.exact ? 'game.perfectIn' : 'game.perfectInMax', { t: fmtHours(perfectIn.min) })}
+        </span>
+      {/if}
     </div>
     {#if game.total}<div class="bar" class:perfect={isPerfect(game)}><i style="width:{pct}%"></i></div>{/if}
   </div>
