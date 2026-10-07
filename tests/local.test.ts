@@ -4,8 +4,8 @@ import { totals } from '../src/lib/lists';
 import { accountIdOf, iconUrl } from '../src/lib/steam/local';
 import { SyncEngine } from '../src/lib/sync/engine';
 import { Scheduler } from '../src/lib/sync/scheduler';
-import { FakeLocal } from './fakeLocal';
-import { FakeSteam } from './fakeSteam';
+import { FakeLocal } from '../src/dev/fakeLocal';
+import { FakeSteam } from '../src/dev/fakeSteam';
 
 const NOW = Date.UTC(2026, 9, 5, 12);
 const SEC = Math.floor(NOW / 1000);
@@ -180,6 +180,18 @@ describe('Steam local cache', () => {
     g.statsMtime = SEC + 30;
     await engine.sync();
     expect(await repo.getGame(3)).toMatchObject({ owned: false, unlocked: 1, total: 1 });
+  });
+
+  it('a game Steam calls "not public" falls back to the local cache instead of stopping the run', async () => {
+    const { steam, local, repo, engine } = setup();
+    steam.add({ appid: 1, name: 'Shared', playtime: 120, lastPlayed: RECENT, playerPrivate: true, achievements: { a: [true, 100, 80], b: [false, 0, 30] } });
+    // Stats older than the last session: normally the API is asked.
+    local.set(1, { schemaMtime: RECENT - 600, statsMtime: RECENT - 600, achievements: { a: [true, 100], b: [false, 0] } });
+    const res = await engine.sync();
+    expect(res.aborted).toBeFalsy();
+    expect(res.errors).toEqual([]);
+    expect(steam.count('GetPlayerAchievements')).toBe(1);
+    expect(await repo.getGame(1)).toMatchObject({ unlocked: 1, total: 2 });
   });
 
   it('a game bought after playing it shared becomes owned', async () => {

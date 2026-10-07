@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MemoryRepo } from '../src/lib/db/repo';
 import { SyncEngine } from '../src/lib/sync/engine';
 import { Scheduler } from '../src/lib/sync/scheduler';
-import { FakeSteam } from './fakeSteam';
+import { FakeSteam } from '../src/dev/fakeSteam';
 
 async function setup() {
   const steam = new FakeSteam();

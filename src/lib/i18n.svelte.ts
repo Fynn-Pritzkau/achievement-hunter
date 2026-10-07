@@ -108,7 +108,7 @@ const de = {
   'sort.playtime': 'Spielzeit',
   'sort.name': 'Name',
 
-  'library.count': '{n} Spiele',
+  'library.count': '{n} {n:Spiel|Spiele}',
   'library.filter': 'Filtern … (z. B. min:50 status:paused)',
   'library.loading': 'Bibliothek wird geladen …',
   'library.empty': 'Nichts in dieser Liste.',
@@ -186,7 +186,7 @@ const de = {
   'game.notUnlocked': 'noch nicht freigeschaltet',
   'game.description': 'Beschreibung',
 
-  'sync.failedGames': '{n} Spiel(e) konnten nicht geladen werden — nächster Sync versucht es erneut.',
+  'sync.failedGames': '{n} {n:Spiel konnte|Spiele konnten} nicht geladen werden — der nächste Sync versucht es erneut.',
   'notify.rare': ' — nur {p} haben das!',
 
   'sidebar.appAchievements': 'Meilensteine',
@@ -244,7 +244,7 @@ const de = {
   'history.week': 'letzte 7 Tage',
   'history.month': 'letzte 30 Tage',
   'history.year': 'letzte 12 Monate',
-  'history.dayCount': '{date}: {n} Unlocks',
+  'history.dayCount': '{date}: {n} {n:Unlock|Unlocks}',
   'history.empty': 'Noch keine Unlocks.',
   'history.more': 'Mehr laden',
   'history.today': 'Heute',
@@ -378,7 +378,7 @@ const de = {
   'list.focus': '📌 Fokus',
   'list.focus.hint': 'Deine angepinnten Achievements aus allen Spielen',
   'focus.empty': 'Noch nichts im Fokus. Pinne in einem Spiel Achievements mit 📍 an, dann stehen sie hier gesammelt.',
-  'focus.count': '{n} Achievements in {g} Spielen',
+  'focus.count': '{n} {n:Achievement|Achievements} in {g} {g:Spiel|Spielen}',
   'list.closest': 'Nächstes Perfect',
   'list.closest.hint': 'Grob geschätzt höchstens 10 h bis 100 %',
   'sort.left': 'Kürzester Weg zu 100 %',
@@ -390,11 +390,11 @@ const de = {
   'game.perfectInMaxHint': 'Nach dem letzten Achievement wurde weitergespielt, daher eine Obergrenze',
   'palette.games': 'Spiele',
   'palette.achievements': 'Achievements',
-  'notify.missable': '⚠ {game}: {n} verpassbare Achievements offen',
+  'notify.missable': '⚠ {game}: {n} {n:verpassbares Achievement|verpassbare Achievements} offen',
   'notify.more': '+{n} weitere',
-  'notify.newAch': '✨ {game}: {n} neue Achievements',
+  'notify.newAch': '✨ {game}: {n} {n:neues Achievement|neue Achievements}',
   'notify.session': 'Session beendet: {game}',
-  'notify.sessionBody': '+{n} Achievements · {time} · {from} → {to}',
+  'notify.sessionBody': '+{n} {n:Achievement|Achievements} · {time} · {from} → {to}',
   'settings.warnMissable': 'Beim Spielstart vor offenen verpassbaren Achievements warnen',
   'settings.sessionRecap': 'Nach jeder Spielsession eine Zusammenfassung zeigen',
   'tour.focus': 'Dein Fokus',
@@ -505,7 +505,7 @@ const en: Record<MessageKey, string> = {
   'sort.playtime': 'Playtime',
   'sort.name': 'Name',
 
-  'library.count': '{n} games',
+  'library.count': '{n} {n:game|games}',
   'library.filter': 'Filter … (e.g. min:50 status:paused)',
   'library.loading': 'Loading library …',
   'library.empty': 'Nothing in this list.',
@@ -583,7 +583,7 @@ const en: Record<MessageKey, string> = {
   'game.notUnlocked': 'not unlocked yet',
   'game.description': 'Description',
 
-  'sync.failedGames': '{n} game(s) could not be loaded — the next sync will try again.',
+  'sync.failedGames': "{n} {n:game|games} couldn't be loaded — the next sync will try again.",
   'notify.rare': ' — only {p} have this!',
 
   'sidebar.appAchievements': 'Milestones',
@@ -641,7 +641,7 @@ const en: Record<MessageKey, string> = {
   'history.week': 'last 7 days',
   'history.month': 'last 30 days',
   'history.year': 'last 12 months',
-  'history.dayCount': '{date}: {n} unlocks',
+  'history.dayCount': '{date}: {n} {n:unlock|unlocks}',
   'history.empty': 'No unlocks yet.',
   'history.more': 'Load more',
   'history.today': 'Today',
@@ -775,7 +775,7 @@ const en: Record<MessageKey, string> = {
   'list.focus': '📌 Focus',
   'list.focus.hint': 'Your pinned achievements from all games',
   'focus.empty': 'Nothing in focus yet. Pin achievements in a game with 📍 and they gather here.',
-  'focus.count': '{n} achievements in {g} games',
+  'focus.count': '{n} {n:achievement|achievements} in {g} {g:game|games}',
   'list.closest': 'Next perfect',
   'list.closest.hint': 'Roughly 10 h or less to 100 %',
   'sort.left': 'Shortest way to 100 %',
@@ -787,11 +787,11 @@ const en: Record<MessageKey, string> = {
   'game.perfectInMaxHint': 'Played on after the last achievement, so this is an upper bound',
   'palette.games': 'Games',
   'palette.achievements': 'Achievements',
-  'notify.missable': '⚠ {game}: {n} missable achievements open',
+  'notify.missable': '⚠ {game}: {n} missable {n:achievement|achievements} open',
   'notify.more': '+{n} more',
-  'notify.newAch': '✨ {game}: {n} new achievements',
+  'notify.newAch': '✨ {game}: {n} new {n:achievement|achievements}',
   'notify.session': 'Session over: {game}',
-  'notify.sessionBody': '+{n} achievements · {time} · {from} → {to}',
+  'notify.sessionBody': '+{n} {n:achievement|achievements} · {time} · {from} → {to}',
   'settings.warnMissable': 'Warn about open missable achievements when a game starts',
   'settings.sessionRecap': 'Show a summary after each play session',
   'tour.focus': 'Your focus',
@@ -823,9 +823,13 @@ export function setLocale(l: Locale) {
 }
 
 /** Translates a key in the current locale. Reactive in templates because it reads `i18n.locale`. */
+/** `{name}` inserts a parameter; `{n:one|other}` picks the singular or plural by the number `n` ("{n} {n:game|games}"). */
 export function t(key: MessageKey, params?: Record<string, string | number>): string {
   const text = MESSAGES[i18n.locale][key] ?? de[key] ?? key;
-  return params ? text.replace(/\{(\w+)\}/g, (m, k) => (k in params ? String(params[k]) : m)) : text;
+  if (!params) return text;
+  return text
+    .replace(/\{(\w+):([^|{}]*)\|([^{}]*)\}/g, (m, k, one, other) => (k in params ? (Number(params[k]) === 1 ? one : other) : m))
+    .replace(/\{(\w+)\}/g, (m, k) => (k in params ? String(params[k]) : m));
 }
 
 export const isMessageKey = (key: string): key is MessageKey => key in de;

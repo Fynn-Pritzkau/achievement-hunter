@@ -9,7 +9,26 @@ import { tauriLocalSteam, type LocalSteam } from './steam/local';
 
 export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
+/**
+ * Mock mode (dev only): fake Steam and an emulated desktop, see src/dev/mock.ts.
+ * `import.meta.env.DEV` is false in builds, so none of it ships.
+ */
+export const isMock =
+  import.meta.env.DEV &&
+  !isTauri &&
+  typeof location !== 'undefined' &&
+  (import.meta.env.MODE === 'mock' || new URLSearchParams(location.search).has('mock'));
+
+/** Has the desktop features (overlay, hotkeys): the app, or the mock mode emulating it. */
+export const hasDesktop = isTauri || isMock;
+
+let mockModule: Promise<typeof import('../dev/mock')> | null = null;
+// The inline DEV check lets the build drop the mock entirely.
+const mock = (): Promise<typeof import('../dev/mock')> =>
+  import.meta.env.DEV ? (mockModule ??= import('../dev/mock')) : Promise.reject(new Error('The mock mode is dev only'));
+
 export async function openRepo(): Promise<Repo> {
+  if (isMock) return (await mock()).openRepo();
   if (isTauri) {
     const { SqliteRepo } = await import('./db/sqlite');
     return SqliteRepo.open();
@@ -18,6 +37,7 @@ export async function openRepo(): Promise<Repo> {
 }
 
 export async function steamTransport(): Promise<{ fetch: FetchFn; baseUrl: string }> {
+  if (isMock) return (await mock()).steamTransport();
   if (isTauri) {
     const http = await import('@tauri-apps/plugin-http');
     return { fetch: http.fetch as FetchFn, baseUrl: 'https://api.steampowered.com' };
@@ -30,6 +50,7 @@ const KEY_NAME = 'steam-api-key';
 
 /** The API key lives in the Windows Credential Manager in the app; in the browser, in localStorage. */
 export async function loadApiKey(): Promise<string | null> {
+  if (isMock) return (await mock()).loadApiKey();
   if (isTauri) {
     const { invoke } = await import('@tauri-apps/api/core');
     return invoke<string | null>('get_secret', { name: KEY_NAME });
@@ -38,6 +59,7 @@ export async function loadApiKey(): Promise<string | null> {
 }
 
 export async function saveApiKey(value: string): Promise<void> {
+  if (isMock) return (await mock()).saveApiKey(value);
   if (isTauri) {
     const { invoke } = await import('@tauri-apps/api/core');
     await invoke('set_secret', { name: KEY_NAME, value });
@@ -48,6 +70,7 @@ export async function saveApiKey(value: string): Promise<void> {
 
 /** AppIDs of the games Steam is running right now, read from the registry. Free — no API call. */
 export async function runningAppIds(): Promise<number[]> {
+  if (isMock) return (await mock()).runningAppIds();
   if (!isTauri) return [];
   const { invoke } = await import('@tauri-apps/api/core');
   return invoke<number[]>('running_app_ids');
@@ -55,6 +78,7 @@ export async function runningAppIds(): Promise<number[]> {
 
 /** Texts of the tray menu, which Rust creates before the UI knows the language. */
 export async function setTrayLabels(open: string, quit: string): Promise<void> {
+  if (isMock) return (await mock()).setTrayLabels(open, quit);
   if (!isTauri) return;
   const { invoke } = await import('@tauri-apps/api/core');
   await invoke('set_tray_labels', { open, quit });
@@ -65,6 +89,7 @@ export async function setTrayLabels(open: string, quit: string): Promise<void> {
  * The switch hotkey is only bound while the overlay is open.
  */
 export async function setOverlayHotkey(hotkey: string, switchHotkey: string, corner: OverlayCorner): Promise<void> {
+  if (isMock) return (await mock()).setOverlayHotkey(hotkey, switchHotkey, corner);
   if (!isTauri) return;
   const { invoke } = await import('@tauri-apps/api/core');
   await invoke('set_overlay_hotkey', { hotkey: hotkey.trim() || null, switchHotkey: switchHotkey.trim() || null, corner });
@@ -72,6 +97,7 @@ export async function setOverlayHotkey(hotkey: string, switchHotkey: string, cor
 
 /** Which of these games owns the foreground window, from its exe path and Steam's app manifests. */
 export async function focusedAppId(candidates: number[]): Promise<number | null> {
+  if (isMock) return (await mock()).focusedAppId(candidates);
   if (!isTauri || !candidates.length) return null;
   const { invoke } = await import('@tauri-apps/api/core');
   return (await invoke<number | null>('focused_app_id', { candidates })) ?? null;
@@ -87,6 +113,7 @@ export async function onOverlayEvents(on: {
   full: () => void;
   switch: () => void;
 }): Promise<void> {
+  if (isMock) return (await mock()).onOverlayEvents(on);
   if (!isTauri) return;
   const { listen } = await import('@tauri-apps/api/event');
   await listen('overlay:ready', on.ready);
@@ -97,18 +124,21 @@ export async function onOverlayEvents(on: {
 
 /** Opens the overlay as a short popup. False when it is already open. */
 export async function openOverlayToast(): Promise<boolean> {
+  if (isMock) return (await mock()).openOverlayToast();
   if (!isTauri) return false;
   const { invoke } = await import('@tauri-apps/api/core');
   return invoke<boolean>('open_overlay_toast');
 }
 
 export async function closeOverlayToast(): Promise<void> {
+  if (isMock) return (await mock()).closeOverlayToast();
   if (!isTauri) return;
   const { invoke } = await import('@tauri-apps/api/core');
   await invoke('close_overlay_toast');
 }
 
 export async function sendOverlayData(data: OverlayData): Promise<void> {
+  if (isMock) return (await mock()).sendOverlayData(data);
   if (!isTauri) return;
   const { emitTo } = await import('@tauri-apps/api/event');
   await emitTo('overlay', 'overlay:data', data);
@@ -116,12 +146,14 @@ export async function sendOverlayData(data: OverlayData): Promise<void> {
 
 /** Steam's local cache (read-only). null in the browser, where there is no file access. */
 export async function openLocalSteam(steamid64: string, language: string): Promise<LocalSteam | null> {
+  if (isMock) return (await mock()).openLocalSteam();
   if (!isTauri) return null;
   const { invoke } = await import('@tauri-apps/api/core');
   return tauriLocalSteam(invoke, steamid64, language);
 }
 
 export async function appVersion(): Promise<string> {
+  if (isMock) return (await mock()).appVersion();
   if (!isTauri) return 'dev';
   const { getVersion } = await import('@tauri-apps/api/app');
   return getVersion();
@@ -136,6 +168,7 @@ export interface AppUpdate {
 
 /** Asks the release feed for a newer signed version. null = up to date (or not the desktop app). */
 export async function checkForUpdate(): Promise<AppUpdate | null> {
+  if (isMock) return (await mock()).checkForUpdate();
   if (!isTauri) return null;
   const { check } = await import('@tauri-apps/plugin-updater');
   const u = await check();
@@ -171,6 +204,7 @@ export async function openExternal(url: string): Promise<void> {
 }
 
 export async function notify(title: string, body: string): Promise<void> {
+  if (isMock) return (await mock()).notify(title, body);
   if (isTauri) {
     const n = await import('@tauri-apps/plugin-notification');
     if (!(await n.isPermissionGranted()) && (await n.requestPermission()) !== 'granted') return;

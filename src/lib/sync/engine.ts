@@ -1,5 +1,5 @@
 import type { Repo } from '../db/repo';
-import { SteamApi, isFatal } from '../steam/api';
+import { SteamApi, SteamApiError, isFatal } from '../steam/api';
 import type { LocalGame, LocalPlaytime, LocalSteam } from '../steam/local';
 import {
   emptyGame,
@@ -53,6 +53,9 @@ export interface EngineOptions {
   /** Called after each game is saved, so the UI can refresh incrementally. */
   onGameUpdated?: (g: Game) => void;
 }
+
+/** How long an empty GetOwnedGames answer counts as Steam hiccup rather than a private profile. */
+const PRIVATE_GRACE_MS = 24 * 3600_000;
 
 export class SyncEngine {
   private running: Promise<SyncResult> | null = null;
@@ -143,8 +146,21 @@ export class SyncEngine {
   private async doSync(force: boolean): Promise<SyncResult> {
     const { api, repo, steamid } = this.opts;
     const result = emptyResult();
-    const apiOwned = await api.getOwnedGames(steamid);
     const known = new Map((await repo.getGames()).map((g) => [g.appid, g]));
+    let apiOwned: OwnedGame[];
+    try {
+      apiOwned = await api.getOwnedGames(steamid);
+    } catch (e) {
+      // Steam sometimes answers with an empty library for minutes even though it is public.
+      // With a library that synced within a day, skip this run instead of blaming the privacy
+      // settings; the next run asks again. A profile that really went private still shows up.
+      const lastSync = Number(await repo.getMeta('lastSync')) || 0;
+      const hadLibrary = [...known.values()].some((g) => g.owned !== false);
+      if (e instanceof SteamApiError && e.kind === 'private' && hadLibrary && this.now() - lastSync < PRIVATE_GRACE_MS) {
+        return result;
+      }
+      throw e;
+    }
     const playtimes = await this.localPlaytimes();
     const owned = withLocalPlaytime([...apiOwned, ...(await this.notOwnedGames(apiOwned, known, playtimes))], playtimes);
     const ownedById = new Map(owned.map((o) => [o.appid, o]));
@@ -378,18 +394,30 @@ export class SyncEngine {
     let schema = task.schema ? (localSchema ?? (await api.getSchema(task.appid))) : null;
     let player: PlayerAchievement[] | null = null;
     let count: number | null = null;
+    // The cache only adds unlocks: it never relocks anything, and its clock can be a few
+    // seconds off the server's, so achievements we already have keep their time.
+    const localUnlocks = (l: LocalGame): PlayerAchievement[] => {
+      const have = new Set(list.filter((a) => a.achieved).map((a) => a.apiname));
+      return l.achievements
+        .filter((a) => a.achieved && !have.has(a.apiname))
+        .map(({ apiname, achieved, unlocktime }) => ({ apiname, achieved, unlocktime }));
+    };
     if (task.player && (schema ? schema.length > 0 : (base.total ?? 0) > 0)) {
       if (localProgress) {
-        // The cache only adds unlocks: it never relocks anything, and its clock can be a few
-        // seconds off the server's, so achievements we already have keep their time.
-        const have = new Set(list.filter((a) => a.achieved).map((a) => a.apiname));
-        player = local!.achievements
-          .filter((a) => a.achieved && !have.has(a.apiname))
-          .map(({ apiname, achieved, unlocktime }) => ({ apiname, achieved, unlocktime }));
+        player = localUnlocks(local!);
         if (localSchema) count = local!.achievements.length;
       } else {
-        player = await api.getPlayerAchievements(task.appid, steamid);
-        count = player?.length ?? null;
+        try {
+          player = await api.getPlayerAchievements(task.appid, steamid);
+          count = player?.length ?? null;
+        } catch (e) {
+          // Steam also says "not public" for single games outside the library (family sharing,
+          // refunds). A private profile already fails at GetOwnedGames, so this one is not fatal:
+          // take what the local cache has, or fail just this game.
+          if (!(e instanceof SteamApiError && e.kind === 'private')) throw e;
+          if (!local?.statsMtime) throw new SteamApiError('http', `GetPlayerAchievements ${task.appid}: not public`, e.status);
+          player = localUnlocks(local);
+        }
       }
     }
     // A different count than we know means the game was updated: get the new schema.

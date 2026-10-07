@@ -2,7 +2,7 @@
   import { onMount, untrack } from 'svelte';
   import { app } from './lib/app.svelte';
   import { t } from './lib/i18n.svelte';
-  import { isTauri, openExternal } from './lib/platform';
+  import { hasDesktop, openExternal } from './lib/platform';
   import { tourGame, tourSteps, type TourStep } from './lib/tour';
   import Setup from './views/Setup.svelte';
   import Sidebar from './views/Sidebar.svelte';
@@ -28,7 +28,7 @@
     untrack(() => {
       if (tour) return;
       const game = tourGame(app.games, app.runningAppIds);
-      tour = { steps: tourSteps(!!game, isTauri), game: game?.appid ?? null, back: { listId, openAppId } };
+      tour = { steps: tourSteps(!!game, hasDesktop), game: game?.appid ?? null, back: { listId, openAppId } };
       paletteOpen = settingsOpen = false;
     });
   });

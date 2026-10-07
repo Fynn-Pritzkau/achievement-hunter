@@ -14,6 +14,8 @@ export interface SchedulerOptions {
   /** A game closed and got its final refresh. `startedAt` = when it was first seen running. */
   onClosed?: (appid: number, startedAt: number, result: SyncResult) => void;
   onError?: (e: unknown) => void;
+  /** Runs the library sync instead of `engine.sync()`, so the caller can show (and clear) its errors. */
+  librarySync?: (force: boolean) => Promise<void>;
 }
 
 /**
@@ -51,7 +53,8 @@ export class Scheduler {
 
   async librarySync(force = false): Promise<void> {
     try {
-      await this.opts.engine.sync({ force });
+      if (this.opts.librarySync) await this.opts.librarySync(force);
+      else await this.opts.engine.sync({ force });
     } catch (e) {
       this.opts.onError?.(e);
     }

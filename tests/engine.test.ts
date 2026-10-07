@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MemoryRepo } from '../src/lib/db/repo';
 import { SyncEngine } from '../src/lib/sync/engine';
-import { FakeSteam } from './fakeSteam';
+import { FakeSteam } from '../src/dev/fakeSteam';
 
 const NOW = Date.UTC(2026, 9, 5, 12);
 const RECENT = Math.floor(NOW / 1000) - 3600;
@@ -177,6 +177,36 @@ describe('SyncEngine', () => {
     const res = await engine.sync();
     expect(res.aborted).toBeFalsy();
     expect(steam.count('GetOwnedGames')).toBe(2);
+  });
+
+  it('an empty library answer after a recent sync skips the run instead of reporting private', async () => {
+    const { steam, repo, engine, advance } = setup();
+    const g = steam.add({ appid: 1, name: 'A', playtime: 1, lastPlayed: RECENT, achievements: { a: [false, 0, 1] } });
+    await engine.sync();
+    const before = await repo.getGame(1);
+    steam.privateProfile = true;
+    g.achievements.a = [true, RECENT, 1];
+    g.playtime = 5;
+    advance(3600_000);
+    steam.calls = [];
+    const res = await engine.sync();
+    expect(res.aborted).toBeFalsy();
+    expect(await repo.getGame(1)).toEqual(before);
+    // Only the asked-again library calls.
+    expect(steam.calls.every((c) => c.includes('GetOwnedGames'))).toBe(true);
+    // A day later without a good run it is reported after all.
+    advance(24 * 3600_000);
+    await expect(engine.sync()).rejects.toMatchObject({ kind: 'private' });
+  });
+
+  it('a single game Steam calls "not public" does not stop the run', async () => {
+    const { steam, repo, engine } = setup();
+    steam.add({ appid: 1, name: 'Shared', playtime: 10, lastPlayed: RECENT, playerPrivate: true, achievements: { a: [true, 100, 1] } });
+    steam.add({ appid: 2, name: 'B', playtime: 10, lastPlayed: RECENT, achievements: { b: [true, 100, 1] } });
+    const res = await engine.sync();
+    expect(res.aborted).toBeFalsy();
+    expect(res.errors.map((e) => e.appid)).toEqual([1]);
+    expect(await repo.getGame(2)).toMatchObject({ unlocked: 1, total: 1 });
   });
 
   it('keeps user pins, notes and exclusions across schema refreshes', async () => {

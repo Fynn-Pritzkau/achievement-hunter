@@ -2,7 +2,7 @@
   import { app } from '../lib/app.svelte';
   import { LOCALES, t, type MessageKey } from '../lib/i18n.svelte';
   import { MAX_SUGGESTIONS, OVERLAY_CORNERS } from '../lib/overlay';
-  import { isTauri } from '../lib/platform';
+  import { hasDesktop } from '../lib/platform';
 
   let { onClose }: { onClose: () => void } = $props();
 
@@ -44,7 +44,7 @@
     <label class="check"><input type="checkbox" bind:checked={s.warnMissable} /> {t('settings.warnMissable')}</label>
     <label class="check"><input type="checkbox" bind:checked={s.sessionRecap} /> {t('settings.sessionRecap')}</label>
     <label class="check"><input type="checkbox" bind:checked={s.revealHidden} /> {t('settings.revealHidden')}</label>
-    {#if isTauri}
+    {#if hasDesktop}
       <fieldset>
         <legend>{t('settings.overlay')}</legend>
         <div class="pair">

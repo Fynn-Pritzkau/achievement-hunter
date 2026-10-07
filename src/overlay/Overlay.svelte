@@ -1,22 +1,21 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { emit, listen } from '@tauri-apps/api/event';
   import { setLocale, t } from '../lib/i18n.svelte';
   import { BUNDLE_MS, type OverlayAch, type OverlayData } from '../lib/overlay';
   import { fmtPercent } from '../lib/util';
+  import { connectOverlay } from './bridge';
 
   let data = $state<OverlayData | null>(null);
   let game = $derived(data?.game ?? null);
   let percent = $derived(game && game.total ? Math.round((game.unlocked / game.total) * 100) : 0);
 
   onMount(() => {
-    const unlisten = listen<OverlayData>('overlay:data', (e) => {
-      setLocale(e.payload.locale);
-      data = e.payload;
+    // Asks the main window for data only once we can receive it.
+    const disconnect = connectOverlay((d) => {
+      setLocale(d.locale);
+      data = d;
     });
-    // Ask the main window for data only once we can receive it.
-    void unlisten.then(() => emit('overlay:ready'));
-    return () => void unlisten.then((f) => f());
+    return () => void disconnect.then((f) => f());
   });
 
   const fmtNum = (n: number) => (Number.isInteger(n) ? n.toLocaleString() : n.toFixed(1));

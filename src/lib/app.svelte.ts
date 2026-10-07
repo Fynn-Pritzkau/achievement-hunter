@@ -403,6 +403,8 @@ class AppState {
       },
       onClosed: (id, startedAt) => this.onGameClosed(id, startedAt),
       onError: (e) => (this.error = errorText(e)),
+      // Through sync(), so a later good run clears the error of an earlier one.
+      librarySync: (force) => this.sync(force),
     });
     this.scheduler.start();
     void this.sync();

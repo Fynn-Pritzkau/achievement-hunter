@@ -54,6 +54,14 @@ npm run tauri dev
 npm test
 ```
 
+To try the UI without a Steam account, run the mock mode. The whole app then runs in the browser against a fake Steam with a sample library. A control panel lets you start games, unlock achievements, count stats up, open the overlay and simulate Steam outages:
+
+```bash
+npm run dev:mock
+```
+
+Then open http://localhost:1421. Scenarios: `?mock=fresh` (setup screen), `?mock=nolocal` (no Steam install), `?mock=empty`, `?mock=private`.
+
 Publish a new version with one command. GitHub Actions then builds, signs and releases it, and installed apps update themselves:
 
 ```bash
