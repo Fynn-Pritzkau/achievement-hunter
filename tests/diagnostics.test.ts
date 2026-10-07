@@ -21,6 +21,7 @@ const settings: Settings = {
   notifyUnlocks: true,
   warnMissable: true,
   sessionRecap: true,
+  milestoneSound: true,
   overlay: DEFAULT_OVERLAY,
 };
 

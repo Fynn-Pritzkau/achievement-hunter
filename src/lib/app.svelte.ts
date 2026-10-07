@@ -32,6 +32,7 @@ import { SyncEngine, type SyncProgress, type UnlockEvent } from './sync/engine';
 import { aggregate } from './sync/merge';
 import { Scheduler } from './sync/scheduler';
 import { libraryStats, newlyEarned, type Earned } from './appAchievements';
+import { playMilestoneSound } from './sound';
 import { completion, type Achievement, type Game } from './types';
 import { errorText, LOCALES, setLocale, systemLocale, t, type Locale, type MessageKey } from './i18n.svelte';
 import { missableOpen } from './tags';
@@ -52,6 +53,8 @@ export interface Settings {
   warnMissable: boolean;
   /** Notify with a short summary when a game closes. */
   sessionRecap: boolean;
+  /** Play a short chime when a milestone (app achievement) is earned. */
+  milestoneSound: boolean;
   overlay: OverlaySettings;
 }
 
@@ -65,6 +68,7 @@ const DEFAULT_SETTINGS: Settings = {
   notifyUnlocks: true,
   warnMissable: true,
   sessionRecap: true,
+  milestoneSound: true,
   overlay: DEFAULT_OVERLAY,
 };
 
@@ -632,6 +636,7 @@ class AppState {
     // The first sync can earn a whole shelf at once: one summary instead of a burst.
     if (fresh.length > 2) void notify(t('appAchs.notifyMany', { n: fresh.length }), fresh.map((a) => a.icon).join(' '));
     else for (const a of fresh) void notify(t('appAchs.notify', { icon: a.icon }), t(`appAch.${a.id}` as MessageKey));
+    if (this.settings.milestoneSound) playMilestoneSound();
   }
 
   /** A game started while the app runs: remember where it stood, warn about missables. */
